@@ -1,30 +1,30 @@
-"""Left navigation rail."""
+"""Left navigation rail with vector icons."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup, QFrame, QLabel, QPushButton, QSpacerItem, QSizePolicy,
+    QButtonGroup, QFrame, QLabel, QPushButton, QSizePolicy, QSpacerItem,
     QVBoxLayout,
 )
 
+from app.ui.icons import make_icon
+from app.ui.theme import active_palette, palette_signal
+
 
 NAV_ITEMS = [
-    ("home", "⌂  Home"),
-    ("folders", "\U0001F4C1  Folders"),
-    ("rules", "⚡  Rules"),
-    ("categories", "☰  Categories"),
-    ("profiles", "\U0001F464  Profiles"),
+    ("home", "Home", "home"),
+    ("folders", "Folders", "folder"),
+    ("rules", "Rules", "bolt"),
+    ("categories", "Categories", "list"),
+    ("profiles", "Profiles", "user"),
 ]
 
-# Footer entries that do not switch pages (about, etc.). They emit
-# the same `selected` signal so MainWindow can route them through a
-# different handler.
 FOOTER_PAGE_ITEMS = [
-    ("settings", "⚙  Settings"),
+    ("settings", "Settings", "gear"),
 ]
 
 FOOTER_ACTION_ITEMS = [
-    ("about", "ⓘ  About"),
+    ("about", "About", "info"),
 ]
 
 # Backwards-compat alias still consulted by older callers.
@@ -32,7 +32,7 @@ FOOTER_ITEMS = FOOTER_PAGE_ITEMS
 
 
 class Sidebar(QFrame):
-    """Vertical nav rail. Emits `selected(key)` when the user picks a page."""
+    """Vertical nav rail. Emits `selected(key)` when the user picks an item."""
 
     selected = Signal(str)
 
@@ -43,7 +43,9 @@ class Sidebar(QFrame):
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons: dict[str, QPushButton] = {}
+        self._icon_keys: dict[str, str] = {}
         self._build()
+        palette_signal().connect(self._refresh_icons)
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
@@ -54,43 +56,49 @@ class Sidebar(QFrame):
         title.setObjectName("appTitle")
         layout.addWidget(title)
 
-        for key, label in NAV_ITEMS:
-            btn = self._make_nav_button(key, label)
+        for key, label, icon_key in NAV_ITEMS:
+            btn = self._make_nav_button(key, label, icon_key, checkable=True)
             layout.addWidget(btn)
 
         layout.addItem(
             QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        for key, label in FOOTER_PAGE_ITEMS:
-            btn = self._make_nav_button(key, label)
+        for key, label, icon_key in FOOTER_PAGE_ITEMS:
+            btn = self._make_nav_button(key, label, icon_key, checkable=True)
             layout.addWidget(btn)
-        for key, label in FOOTER_ACTION_ITEMS:
-            btn = self._make_action_button(key, label)
+        for key, label, icon_key in FOOTER_ACTION_ITEMS:
+            btn = self._make_nav_button(key, label, icon_key, checkable=False)
             layout.addWidget(btn)
 
         layout.addSpacing(8)
 
-    def _make_action_button(self, key: str, label: str) -> QPushButton:
-        """Footer entry that fires `selected(key)` but isn't a checkable nav."""
-        btn = QPushButton(label)
+    def _make_nav_button(self, key: str, label: str, icon_key: str,
+                         *, checkable: bool) -> QPushButton:
+        btn = QPushButton(f"  {label}")
         btn.setObjectName("navItem")
-        btn.setCheckable(False)
+        btn.setCheckable(checkable)
         btn.setCursor(Qt.PointingHandCursor)
+        btn.setIconSize(QSize(18, 18))
         btn.clicked.connect(lambda _=False, k=key: self.selected.emit(k))
+        if checkable:
+            self._group.addButton(btn)
+            self._buttons[key] = btn
+        self._icon_keys[key] = icon_key
+        btn._fo_key = key  # type: ignore[attr-defined]
         return btn
 
-    def _make_nav_button(self, key: str, label: str) -> QPushButton:
-        btn = QPushButton(label)
-        btn.setObjectName("navItem")
-        btn.setCheckable(True)
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.clicked.connect(lambda _=False, k=key: self._on_clicked(k))
-        self._group.addButton(btn)
-        self._buttons[key] = btn
-        return btn
-
-    def _on_clicked(self, key: str) -> None:
-        self.selected.emit(key)
+    def _refresh_icons(self) -> None:
+        color = active_palette().text_dim
+        for btn_key, icon_key in self._icon_keys.items():
+            btn = self._buttons.get(btn_key)
+            if btn is None:
+                # Action item (not in checkable group). Walk children to find it.
+                for child in self.findChildren(QPushButton):
+                    if getattr(child, "_fo_key", None) == btn_key:
+                        btn = child
+                        break
+            if btn is not None:
+                btn.setIcon(make_icon(icon_key, size=18, color=color))
 
     def select(self, key: str) -> None:
         """Programmatic selection — used at startup."""
@@ -98,3 +106,5 @@ class Sidebar(QFrame):
         if btn:
             btn.setChecked(True)
             self.selected.emit(key)
+            # First-time icon paint happens after the widget is parented.
+            self._refresh_icons()

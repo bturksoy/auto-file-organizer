@@ -87,6 +87,7 @@ class ProfilesPage(BasePage):
         if not dlg.exec():
             return
         profile = build_from_template(dlg.chosen_template(), dlg.chosen_name())
+        profile.color = dlg.chosen_color()
         self._state.add_profile(profile)
 
     def _rename(self, profile_id: str) -> None:
@@ -94,9 +95,12 @@ class ProfilesPage(BasePage):
         if not target:
             return
         dlg = ProfileNameDialog(
-            title="Rename profile", initial=target.name, parent=self)
+            title="Edit profile", initial=target.name,
+            initial_color=target.color, parent=self,
+        )
         if dlg.exec():
             target.name = dlg.value()
+            target.color = dlg.color()
             self._state.save()
             self._refresh()
 

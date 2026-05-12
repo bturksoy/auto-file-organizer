@@ -7,16 +7,18 @@ from pathlib import Path
 import os
 
 from PySide6.QtCore import Qt, QObject, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
     QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
 from app.core.i18n import i18n
 from app.core.organize import apply_plan, scan_folder, undo_last
 from app.core.state import AppState
+from app.ui.dialogs.plan_editor import PlanEditorDialog
 from app.ui.dialogs.stats import StatsDialog
+from app.ui.dialogs.undo_history import UndoHistoryDialog
 from app.ui.pages.base_page import BasePage, InfoBanner
 from app.ui.theme import active_palette, palette_signal
 
@@ -91,8 +93,36 @@ class HomePage(BasePage):
         self.open_explorer_btn.clicked.connect(self._open_in_explorer)
         buttons.addWidget(self.open_explorer_btn)
 
+        self.history_btn = QPushButton("History...")
+        self.history_btn.setObjectName("secondary")
+        self.history_btn.setCursor(Qt.PointingHandCursor)
+        self.history_btn.setToolTip(
+            "Browse past organize runs and roll them back")
+        self.history_btn.clicked.connect(self._open_history)
+        buttons.addWidget(self.history_btn)
+
+        self.edit_plan_btn = QPushButton("Edit plan...")
+        self.edit_plan_btn.setObjectName("secondary")
+        self.edit_plan_btn.setCursor(Qt.PointingHandCursor)
+        self.edit_plan_btn.setToolTip(
+            "Multi-select files in the planned grouping and reassign them "
+            "before Organize runs")
+        self.edit_plan_btn.setEnabled(False)
+        self.edit_plan_btn.clicked.connect(self._open_plan_editor)
+        buttons.addWidget(self.edit_plan_btn)
+
         buttons.addStretch(1)
         layout.addLayout(buttons)
+
+        # Search filter for the log content.
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter:"))
+        self._log_filter = QLineEdit()
+        self._log_filter.setPlaceholderText(
+            "Show only lines containing... (e.g. .pdf)")
+        self._log_filter.textChanged.connect(self._apply_log_filter)
+        filter_row.addWidget(self._log_filter, stretch=1)
+        layout.addLayout(filter_row)
 
         # Page-local shortcuts. Ctrl+P/O/Z only fire while the page is shown.
         for seq, slot in (
@@ -115,6 +145,9 @@ class HomePage(BasePage):
         self.log.setReadOnly(True)
         self.log.setMinimumHeight(280)
         layout.addWidget(self.log, stretch=1)
+        # Master copy of log lines so the filter can re-render without
+        # losing the original output.
+        self._log_lines: list[str] = []
 
     # ----- state hooks -----
 
@@ -162,7 +195,53 @@ class HomePage(BasePage):
             btn.setEnabled(not busy)
 
     def _append_log(self, line: str) -> None:
-        self.log.appendPlainText(line)
+        self._log_lines.append(line)
+        needle = self._log_filter.text().strip().lower()
+        # Always show category headers + summary lines; only filter file rows.
+        is_file_row = line.startswith("  - ")
+        if not needle or (not is_file_row) or needle in line.lower():
+            self.log.appendPlainText(line)
+
+    def _apply_log_filter(self, _text: str) -> None:
+        needle = self._log_filter.text().strip().lower()
+        self.log.clear()
+        for line in self._log_lines:
+            is_file_row = line.startswith("  - ")
+            if not needle or (not is_file_row) or needle in line.lower():
+                self.log.appendPlainText(line)
+        self.log.moveCursor(QTextCursor.Start)
+
+    def _open_plan_editor(self) -> None:
+        plan = self._state.last_plan
+        profile = self._state.active_profile()
+        if not plan or not profile:
+            return
+        dlg = PlanEditorDialog(plan, profile, parent=self)
+        # Re-render the log once the user closes the editor — counts may
+        # have shifted and reassignments changed category groupings.
+        dlg.plan_changed.connect(lambda: self._render_plan_log())
+        dlg.exec()
+        self._render_plan_log()
+
+    def _render_plan_log(self) -> None:
+        plan = self._state.last_plan
+        profile = self._state.active_profile()
+        if not plan or not profile:
+            return
+        lookup = {c.id: c.name for c in profile.categories}
+        grouped: dict[str, list[str]] = {}
+        for m in plan:
+            label = lookup.get(m.category_id, m.dst.parent.name or "Folder")
+            grouped.setdefault(label, []).append(m.src.name)
+        self._log_lines = []
+        for label in sorted(grouped):
+            self._log_lines.append(f"[{label}]  ({len(grouped[label])})")
+            for name in sorted(grouped[label]):
+                self._log_lines.append(f"  - {name}")
+            self._log_lines.append("")
+        self._log_lines.append(
+            f"Total: {len(plan)} files, {len(grouped)} categories.")
+        self._apply_log_filter("")
 
     def _set_progress(self, value: int, total: int) -> None:
         if total <= 0:
@@ -176,6 +255,7 @@ class HomePage(BasePage):
         if not folder:
             return
         self._set_busy(True)
+        self._log_lines.clear()
         self.log.clear()
         self._append_log(f"=== Preview: {folder} ===")
         threading.Thread(
@@ -208,6 +288,8 @@ class HomePage(BasePage):
             for name in sorted(grouped[label]):
                 self._bridge.log.emit(f"  - {name}")
             self._bridge.log.emit("")
+        # Enable Edit plan now that we have a fresh plan in state.
+        self.edit_plan_btn.setEnabled(bool(plan))
         self._bridge.finished_preview.emit(len(plan), len(grouped))
 
     def _on_preview_done(self, files: int, cats: int) -> None:
@@ -227,6 +309,7 @@ class HomePage(BasePage):
                 return
 
         self._set_busy(True)
+        self._log_lines.clear()
         self.log.clear()
         self._append_log(f"=== Organize: {folder} ===")
         threading.Thread(
@@ -269,6 +352,16 @@ class HomePage(BasePage):
                 names = {c.id: c.name for c in profile.categories}
                 lookup = names.get
             StatsDialog(result, category_lookup=lookup, parent=self).exec()
+
+    def _open_history(self) -> None:
+        folder = self._state.current_folder
+        if not folder or not folder.is_dir():
+            QMessageBox.information(
+                self, "Pick a folder",
+                "Pick a folder first to view its undo history.",
+            )
+            return
+        UndoHistoryDialog(folder, parent=self).exec()
 
     def _open_in_explorer(self) -> None:
         folder = self._state.current_folder

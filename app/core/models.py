@@ -152,6 +152,7 @@ class ProfileSettings:
 class Profile:
     id: str
     name: str
+    color: str = "#7c8cff"
     rules: list[Rule] = field(default_factory=list)
     categories: list[Category] = field(default_factory=list)
     settings: ProfileSettings = field(default_factory=ProfileSettings)
@@ -161,6 +162,7 @@ class Profile:
         return Profile(
             id=str(d.get("id") or uuid.uuid4().hex),
             name=str(d.get("name", "Profile")),
+            color=str(d.get("color") or "#7c8cff"),
             rules=[Rule.from_dict(r) for r in d.get("rules", [])],
             categories=[Category.from_dict(c) for c in d.get("categories", [])],
             settings=ProfileSettings.from_dict(d.get("settings", {})),

@@ -1,7 +1,7 @@
 """Card widget for a single Rule, with drag-to-reorder support."""
 from __future__ import annotations
 
-from PySide6.QtCore import QMimeData, Qt, Signal
+from PySide6.QtCore import QMimeData, QSize, Qt, Signal
 from PySide6.QtGui import QDrag, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 
 from app.core.i18n import i18n
 from app.core.models import Action, Condition, Rule
+from app.ui.icons import make_icon
 from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
 from app.ui.widgets.toggle import Toggle
@@ -71,12 +72,12 @@ class RuleCard(Card):
         header = QHBoxLayout()
         header.setSpacing(10)
 
-        handle = QLabel("≡")
-        handle.setObjectName("dragHandle")
-        handle.setCursor(Qt.OpenHandCursor)
-        handle.setToolTip("Drag to reorder priority")
-        handle.mousePressEvent = self._start_drag  # type: ignore[assignment]
-        header.addWidget(handle)
+        self._handle = QLabel()
+        self._handle.setCursor(Qt.OpenHandCursor)
+        self._handle.setToolTip("Drag to reorder priority")
+        self._handle.mousePressEvent = self._start_drag  # type: ignore[assignment]
+        self._handle.setFixedSize(28, 28)
+        header.addWidget(self._handle)
 
         self.toggle = Toggle(checked=rule.enabled)
         self.toggle.toggled.connect(
@@ -97,23 +98,25 @@ class RuleCard(Card):
         chip.setObjectName("chipNeutral" if not match_count else "chipAccent")
         header.addWidget(chip)
 
-        edit_btn = QPushButton("✎")
-        edit_btn.setObjectName("iconBtn")
-        edit_btn.setFixedSize(30, 30)
-        edit_btn.setCursor(Qt.PointingHandCursor)
-        edit_btn.setToolTip("Edit rule")
-        edit_btn.clicked.connect(
+        self._edit_btn = QPushButton()
+        self._edit_btn.setObjectName("iconBtn")
+        self._edit_btn.setFixedSize(30, 30)
+        self._edit_btn.setIconSize(QSize(16, 16))
+        self._edit_btn.setCursor(Qt.PointingHandCursor)
+        self._edit_btn.setToolTip("Edit rule")
+        self._edit_btn.clicked.connect(
             lambda: self.edit_requested.emit(self._rule.id))
-        header.addWidget(edit_btn)
+        header.addWidget(self._edit_btn)
 
-        del_btn = QPushButton("✕")
-        del_btn.setObjectName("iconBtn")
-        del_btn.setFixedSize(30, 30)
-        del_btn.setCursor(Qt.PointingHandCursor)
-        del_btn.setToolTip("Delete rule")
-        del_btn.clicked.connect(
+        self._del_btn = QPushButton()
+        self._del_btn.setObjectName("iconBtn")
+        self._del_btn.setFixedSize(30, 30)
+        self._del_btn.setIconSize(QSize(16, 16))
+        self._del_btn.setCursor(Qt.PointingHandCursor)
+        self._del_btn.setToolTip("Delete rule")
+        self._del_btn.clicked.connect(
             lambda: self.delete_requested.emit(self._rule.id))
-        header.addWidget(del_btn)
+        header.addWidget(self._del_btn)
 
         self.layout().addLayout(header)
 
@@ -138,6 +141,15 @@ class RuleCard(Card):
             self._action_label.setStyleSheet(
                 f"color: {p.accent}; font-size: 13px; font-weight: 500;"
             )
+        # Repaint icons in the new tint.
+        if hasattr(self, "_handle"):
+            self._handle.setPixmap(
+                make_icon("grip", size=18, color=p.text_faint)
+                .pixmap(18, 18))
+        if hasattr(self, "_edit_btn"):
+            self._edit_btn.setIcon(make_icon("pencil", color=p.text_dim))
+        if hasattr(self, "_del_btn"):
+            self._del_btn.setIcon(make_icon("cross", color=p.text_dim))
 
     # ----- drag-and-drop -----
 

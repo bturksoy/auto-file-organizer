@@ -1,14 +1,16 @@
 """Card widget for a single Profile in the Profiles list."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout,
 )
 
 from app.core.models import Profile
+from app.ui.icons import make_icon
 from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
+from app.ui.widgets.color_dot import ColorDot
 
 
 class ProfileCard(Card):
@@ -31,6 +33,9 @@ class ProfileCard(Card):
 
         name_row = QHBoxLayout()
         name_row.setSpacing(8)
+        # Color dot reflects the profile.color field — set when creating /
+        # editing a profile, makes the list scannable at a glance.
+        name_row.addWidget(ColorDot(profile.color, size=12))
         name = QLabel(profile.name or "Untitled")
         name.setStyleSheet("font-size: 14px; font-weight: 600;")
         name_row.addWidget(name)
@@ -65,19 +70,22 @@ class ProfileCard(Card):
                 lambda: self.switch_requested.emit(self._profile.id))
             row.addWidget(switch_btn)
 
-        menu_btn = QPushButton("⋯")
-        menu_btn.setObjectName("iconBtn")
-        menu_btn.setFixedSize(34, 30)
-        menu_btn.setCursor(Qt.PointingHandCursor)
-        menu_btn.setToolTip("Profile actions")
-        menu_btn.clicked.connect(lambda: self._open_menu(menu_btn))
-        row.addWidget(menu_btn)
+        self._menu_btn = QPushButton()
+        self._menu_btn.setObjectName("iconBtn")
+        self._menu_btn.setFixedSize(34, 30)
+        self._menu_btn.setIconSize(QSize(16, 16))
+        self._menu_btn.setCursor(Qt.PointingHandCursor)
+        self._menu_btn.setToolTip("Profile actions")
+        self._menu_btn.clicked.connect(lambda: self._open_menu(self._menu_btn))
+        row.addWidget(self._menu_btn)
 
         self.layout().addLayout(row)
 
     def _restyle(self) -> None:
         p = active_palette()
         self._meta.setStyleSheet(f"color: {p.text_dim}; font-size: 12px;")
+        if hasattr(self, "_menu_btn"):
+            self._menu_btn.setIcon(make_icon("dots", color=p.text_dim))
 
     def _open_menu(self, anchor: QPushButton) -> None:
         menu = QMenu(self)

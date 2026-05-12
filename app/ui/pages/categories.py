@@ -61,8 +61,25 @@ class CategoriesPage(BasePage):
             card.toggled.connect(self._on_toggled)
             card.edit_requested.connect(self._edit_existing)
             card.delete_requested.connect(self._delete_existing)
+            card.drop_received.connect(self._on_reorder)
             self._list_layout.addWidget(card)
         self._list_layout.addStretch(1)
+
+    def _on_reorder(self, dropped_id: str, target_id: str) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        ids = [c.id for c in profile.categories]
+        if dropped_id not in ids or target_id not in ids:
+            return
+        src_idx = ids.index(dropped_id)
+        dst_idx = ids.index(target_id)
+        moved = profile.categories.pop(src_idx)
+        if dst_idx > src_idx:
+            dst_idx -= 1
+        profile.categories.insert(dst_idx, moved)
+        self._state.save()
+        self._refresh()
 
     def _on_toggled(self, category_id: str, enabled: bool) -> None:
         profile = self._state.active_profile()
