@@ -164,16 +164,21 @@ class AppData:
     active_profile_id: str = ""
     profiles: list[Profile] = field(default_factory=list)
     language: str = "en"
+    theme: str = "dark"
     check_updates_on_startup: bool = True
     recent_folders: list[str] = field(default_factory=list)
     dismissed_update_version: str = ""
 
     @staticmethod
     def from_dict(d: dict) -> "AppData":
+        theme = str(d.get("theme") or "dark")
+        if theme not in ("dark", "light"):
+            theme = "dark"
         return AppData(
             active_profile_id=str(d.get("active_profile_id", "")),
             profiles=[Profile.from_dict(p) for p in d.get("profiles", [])],
             language=str(d.get("language", "en")),
+            theme=theme,
             check_updates_on_startup=bool(d.get("check_updates_on_startup", True)),
             recent_folders=list(d.get("recent_folders", [])),
             dismissed_update_version=str(d.get("dismissed_update_version", "")),

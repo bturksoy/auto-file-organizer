@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import Profile
 from app.core.state import AppState
 from app.core.templates import build_from_template
@@ -24,9 +25,9 @@ class ProfilesPage(BasePage):
     def __init__(self, state: AppState, parent=None) -> None:
         self._state = state
         super().__init__(
-            title="Profiles",
-            subtitle="Save and switch between different organization configurations.",
-            action_label="+ New Profile",
+            title=i18n.t("page_profiles_title"),
+            subtitle=i18n.t("page_profiles_subtitle"),
+            action_label=i18n.t("new_profile"),
             parent=parent,
         )
         if self.header.action_button:
@@ -39,18 +40,14 @@ class ProfilesPage(BasePage):
     def build_body(self, layout: QVBoxLayout) -> None:
         # Extra "Import" button next to the page action.
         if self.header.action_button:
-            import_btn = QPushButton("→ Import")
+            import_btn = QPushButton(f"→ {i18n.t('import_profile')}")
             import_btn.setObjectName("secondary")
             import_btn.setCursor(Qt.PointingHandCursor)
             import_btn.clicked.connect(self._import_profile)
             self.header.layout().insertWidget(
                 self.header.layout().count() - 1, import_btn)
 
-        layout.addWidget(InfoBanner(
-            "Each profile contains its own rules, categories, and settings. "
-            "Switch profiles to use different organization configurations for "
-            "different purposes."
-        ))
+        layout.addWidget(InfoBanner(i18n.t("page_profiles_banner")))
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)

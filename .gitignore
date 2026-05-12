@@ -28,3 +28,5 @@ desktop.ini
 
 # Project-local
 .file-organizer-undo.json
+.tmp_commit_msg.txt
+.tmp_release_notes.md

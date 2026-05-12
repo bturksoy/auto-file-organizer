@@ -115,18 +115,14 @@ class MainWindow(QMainWindow):
         return bar
 
     def _build_statusbar(self) -> None:
+        # All colors come from the active QSS stylesheet.
         bar = QStatusBar()
-        bar.setStyleSheet(
-            "QStatusBar { background: #15161a; color: #9ba0ab; "
-            "border-top: 1px solid #2c2e36; }"
-            " QStatusBar::item { border: none; }"
-        )
         self._status_profile = QLabel("")
         self._status_folder = QLabel("")
         self._status_mode = QLabel("")
         for lbl in (self._status_profile, self._status_mode,
                     self._status_folder):
-            lbl.setStyleSheet("color: #9ba0ab; padding: 0 12px;")
+            lbl.setContentsMargins(12, 0, 12, 0)
         bar.addWidget(self._status_profile)
         bar.addWidget(self._status_mode)
         bar.addPermanentWidget(self._status_folder)

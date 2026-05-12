@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QLabel, QMessageBox, QScrollArea, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.state import AppState
 from app.ui.dialogs.category_edit import CategoryEditDialog
 from app.ui.pages.base_page import BasePage
@@ -16,9 +17,9 @@ class CategoriesPage(BasePage):
     def __init__(self, state: AppState, parent=None) -> None:
         self._state = state
         super().__init__(
-            title="Categories",
-            subtitle="Extension-based groupings and their target folders.",
-            action_label="+ New Category",
+            title=i18n.t("page_categories_title"),
+            subtitle=i18n.t("page_categories_subtitle"),
+            action_label=i18n.t("new_category"),
             parent=parent,
         )
         if self.header.action_button:
@@ -29,7 +30,7 @@ class CategoriesPage(BasePage):
         self._refresh()
 
     def build_body(self, layout: QVBoxLayout) -> None:
-        self._section_label = QLabel("DEFAULT CATEGORIES")
+        self._section_label = QLabel(i18n.t("default_categories"))
         self._section_label.setObjectName("sectionLabel")
         layout.addWidget(self._section_label)
 

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.state import AppState
 from app.ui.pages.base_page import BasePage, InfoBanner
 from app.ui.widgets.card import Card
@@ -19,8 +20,8 @@ class FoldersPage(BasePage):
     def __init__(self, state: AppState, parent=None) -> None:
         self._state = state
         super().__init__(
-            title="Folders",
-            subtitle="Recent locations, optional destination library, watched folder.",
+            title=i18n.t("page_folders_title"),
+            subtitle=i18n.t("page_folders_subtitle"),
             parent=parent,
         )
         state.profiles_changed.connect(self._refresh_paths)
@@ -30,10 +31,7 @@ class FoldersPage(BasePage):
         self._refresh_recent()
 
     def build_body(self, layout: QVBoxLayout) -> None:
-        layout.addWidget(InfoBanner(
-            "Destination folder centralises everything in one library. "
-            "Watched folder is the source for background auto-organize."
-        ))
+        layout.addWidget(InfoBanner(i18n.t("page_folders_banner")))
 
         layout.addWidget(self._build_destination_card())
         layout.addWidget(self._build_watched_card())

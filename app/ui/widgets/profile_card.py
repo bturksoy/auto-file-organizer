@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.models import Profile
+from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
 
 
@@ -40,11 +41,12 @@ class ProfileCard(Card):
         name_row.addStretch(1)
         text_col.addLayout(name_row)
 
-        meta = QLabel(
+        self._meta = QLabel(
             f"{len(profile.rules)} rules · {len(profile.categories)} categories"
         )
-        meta.setStyleSheet("color: #9ba0ab; font-size: 12px;")
-        text_col.addWidget(meta)
+        text_col.addWidget(self._meta)
+        self._restyle()
+        palette_signal().connect(self._restyle)
 
         row.addLayout(text_col, stretch=1)
 
@@ -72,6 +74,10 @@ class ProfileCard(Card):
         row.addWidget(menu_btn)
 
         self.layout().addLayout(row)
+
+    def _restyle(self) -> None:
+        p = active_palette()
+        self._meta.setStyleSheet(f"color: {p.text_dim}; font-size: 12px;")
 
     def _open_menu(self, anchor: QPushButton) -> None:
         menu = QMenu(self)

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.models import Category
+from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
 from app.ui.widgets.chip import Chip
 from app.ui.widgets.color_dot import ColorDot
@@ -83,14 +84,20 @@ class CategoryCard(Card):
 
         # Target folder row
         target_row = QHBoxLayout()
-        folder_icon = QLabel("📁")
-        folder_icon.setStyleSheet("color: #9ba0ab;")
-        target_row.addWidget(folder_icon)
-        target = QLabel(f"→ {category.target_folder or category.name}")
-        target.setStyleSheet("color: #9ba0ab; font-size: 12px;")
-        target_row.addWidget(target)
+        self._folder_icon = QLabel("📁")
+        target_row.addWidget(self._folder_icon)
+        self._target = QLabel(f"→ {category.target_folder or category.name}")
+        target_row.addWidget(self._target)
         target_row.addStretch(1)
         self.layout().addLayout(target_row)
+
+        self._restyle_text()
+        palette_signal().connect(self._restyle_text)
+
+    def _restyle_text(self) -> None:
+        p = active_palette()
+        self._folder_icon.setStyleSheet(f"color: {p.text_dim};")
+        self._target.setStyleSheet(f"color: {p.text_dim}; font-size: 12px;")
 
     def category(self) -> Category:
         return self._category

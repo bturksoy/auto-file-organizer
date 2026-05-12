@@ -22,6 +22,8 @@ class AppState(QObject):
     folder_changed = Signal(object)        # Path | None
     plan_ready = Signal(list)              # list[PlannedMove]
     organize_finished = Signal(object)     # OrganizeResult
+    theme_changed = Signal(str)            # "dark" or "light"
+    language_changed = Signal(str)         # ISO code
 
     def __init__(self) -> None:
         super().__init__()
@@ -76,6 +78,18 @@ class AppState(QObject):
         save_app_data(self.data)
 
     def set_language(self, code: str) -> None:
+        if code == self.data.language:
+            return
         self.data.language = code
         i18n.set_language(code)
         self.save()
+        self.language_changed.emit(code)
+
+    def set_theme(self, name: str) -> None:
+        if name not in ("dark", "light"):
+            return
+        if name == self.data.theme:
+            return
+        self.data.theme = name
+        self.save()
+        self.theme_changed.emit(name)

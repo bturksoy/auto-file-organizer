@@ -7,7 +7,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import Action, Condition, Rule
+from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
 from app.ui.widgets.toggle import Toggle
 
@@ -87,7 +89,10 @@ class RuleCard(Card):
 
         header.addStretch(1)
 
-        badge_text = "No matches" if not match_count else f"{match_count} matched"
+        if match_count:
+            badge_text = f"{match_count} {i18n.t('matches_label')}"
+        else:
+            badge_text = i18n.t("no_matches_label")
         chip = QLabel(badge_text)
         chip.setObjectName("chipNeutral" if not match_count else "chipAccent")
         header.addWidget(chip)
@@ -112,18 +117,27 @@ class RuleCard(Card):
 
         self.layout().addLayout(header)
 
-        # Conditions summary
+        # Conditions summary — palette-aware so light mode stays readable.
+        self._cond_labels: list[QLabel] = []
         for cond in rule.conditions:
             cond_label = QLabel(describe_condition(cond))
-            cond_label.setStyleSheet("color: #c5c9d4;")
+            self._cond_labels.append(cond_label)
             self.layout().addWidget(cond_label)
 
-        action_label = QLabel(
+        self._action_label = QLabel(
             describe_action(rule.action, category_lookup=category_lookup))
-        action_label.setStyleSheet(
-            "color: #7c8cff; font-size: 13px; font-weight: 500;"
-        )
-        self.layout().addWidget(action_label)
+        self.layout().addWidget(self._action_label)
+        self._restyle_text()
+        palette_signal().connect(self._restyle_text)
+
+    def _restyle_text(self) -> None:
+        p = active_palette()
+        for label in getattr(self, "_cond_labels", []):
+            label.setStyleSheet(f"color: {p.text};")
+        if hasattr(self, "_action_label"):
+            self._action_label.setStyleSheet(
+                f"color: {p.accent}; font-size: 13px; font-weight: 500;"
+            )
 
     # ----- drag-and-drop -----
 

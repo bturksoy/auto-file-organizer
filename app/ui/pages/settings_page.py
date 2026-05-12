@@ -35,8 +35,8 @@ class SettingsPage(BasePage):
     def __init__(self, state: AppState, parent=None) -> None:
         self._state = state
         super().__init__(
-            title="Settings",
-            subtitle="Active-profile behavior and global preferences.",
+            title=i18n.t("page_settings_title"),
+            subtitle=i18n.t("page_settings_subtitle"),
             parent=parent,
         )
         state.active_profile_changed.connect(self._sync)
@@ -62,6 +62,7 @@ class SettingsPage(BasePage):
             self._build_scan_card,
             self._build_notifications_card,
             self._build_auto_card,
+            self._build_theme_card,
             self._build_language_card,
             self._build_updates_card,
         ):
@@ -221,6 +222,31 @@ class SettingsPage(BasePage):
         card.layout().addLayout(row)
         return card
 
+    def _build_theme_card(self) -> Card:
+        card = Card()
+        row = QHBoxLayout()
+        body = QVBoxLayout()
+        body.addWidget(self._h2("THEME"))
+        title = QLabel("Appearance")
+        title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        body.addWidget(title)
+        hint = QLabel("Switch between dark and light. Applies immediately.")
+        hint.setStyleSheet("color: #9ba0ab;")
+        body.addWidget(hint)
+        row.addLayout(body, stretch=1)
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItem("Dark", userData="dark")
+        self._theme_combo.addItem("Light", userData="light")
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        row.addWidget(self._theme_combo)
+        card.layout().addLayout(row)
+        return card
+
+    def _on_theme_changed(self, _index: int) -> None:
+        name = self._theme_combo.currentData()
+        if name:
+            self._state.set_theme(name)
+
     def _build_updates_card(self) -> Card:
         card = Card()
         row = QHBoxLayout()
@@ -259,6 +285,11 @@ class SettingsPage(BasePage):
         for i in range(self._lang_combo.count()):
             if self._lang_combo.itemData(i) == self._state.data.language:
                 self._lang_combo.setCurrentIndex(i)
+                break
+        # Theme
+        for i in range(self._theme_combo.count()):
+            if self._theme_combo.itemData(i) == self._state.data.theme:
+                self._theme_combo.setCurrentIndex(i)
                 break
         self._updates_toggle.setChecked(self._state.data.check_updates_on_startup)
 

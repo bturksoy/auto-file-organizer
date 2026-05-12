@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.organize import apply_plan, scan_folder, undo_last
 from app.core.state import AppState
 from app.ui.pages.base_page import BasePage, InfoBanner
@@ -33,8 +34,8 @@ class HomePage(BasePage):
         self._bridge.finished_preview.connect(self._on_preview_done)
         self._bridge.finished_organize.connect(self._on_organize_done)
         super().__init__(
-            title="Home",
-            subtitle="Preview and run the active profile against the selected folder.",
+            title=i18n.t("page_home_title"),
+            subtitle=i18n.t("page_home_subtitle"),
             parent=parent,
         )
         state.folder_changed.connect(self._on_folder_changed)
@@ -46,10 +47,7 @@ class HomePage(BasePage):
     # ----- layout -----
 
     def build_body(self, layout: QVBoxLayout) -> None:
-        layout.addWidget(InfoBanner(
-            "Pick a folder above, then Preview to see how the active profile "
-            "will classify files. Organize moves them; Undo reverts the last run."
-        ))
+        layout.addWidget(InfoBanner(i18n.t("page_home_banner")))
 
         meta = QHBoxLayout()
         self._profile_label = QLabel("")
@@ -63,19 +61,19 @@ class HomePage(BasePage):
 
         # Action buttons
         buttons = QHBoxLayout()
-        self.preview_btn = QPushButton("Preview")
+        self.preview_btn = QPushButton(i18n.t("preview_action"))
         self.preview_btn.setObjectName("primary")
         self.preview_btn.setCursor(Qt.PointingHandCursor)
         self.preview_btn.clicked.connect(self._preview)
         buttons.addWidget(self.preview_btn)
 
-        self.organize_btn = QPushButton("Organize")
+        self.organize_btn = QPushButton(i18n.t("organize_action"))
         self.organize_btn.setObjectName("secondary")
         self.organize_btn.setCursor(Qt.PointingHandCursor)
         self.organize_btn.clicked.connect(self._organize)
         buttons.addWidget(self.organize_btn)
 
-        self.undo_btn = QPushButton("Undo last run")
+        self.undo_btn = QPushButton(i18n.t("undo_action"))
         self.undo_btn.setObjectName("secondary")
         self.undo_btn.setCursor(Qt.PointingHandCursor)
         self.undo_btn.clicked.connect(self._undo)

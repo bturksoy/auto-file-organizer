@@ -23,7 +23,7 @@ from app.services.updates import (
     is_newer, is_running_frozen,
 )
 from app.ui.main_window import MainWindow
-from app.ui.theme import STYLESHEET
+from app.ui.theme import THEMES, build_stylesheet
 
 
 def _resources_dir() -> Path:
@@ -114,16 +114,38 @@ def main() -> int:
     app.setApplicationName("Auto File Organizer")
     app.setOrganizationName("FileOrganizer")
     app.setFont(QFont("Segoe UI", 9))
-    app.setStyleSheet(STYLESHEET)
 
     icon = app_icon()
     if not icon.isNull():
         app.setWindowIcon(icon)
 
     state = AppState()
+    # Apply theme from saved settings, then re-apply on every change.
+    def _apply_theme(name: str) -> None:
+        from app.ui.theme import set_active_palette
+        palette = THEMES.get(name) or THEMES["dark"]
+        set_active_palette(palette)
+        app.setStyleSheet(build_stylesheet(palette))
+        for w in app.allWidgets():
+            w.update()
+    _apply_theme(state.data.theme)
+    state.theme_changed.connect(_apply_theme)
+
     window = MainWindow(state)
     if not icon.isNull():
         window.setWindowIcon(icon)
+
+    # Language hot-swap requires rebuilding many widgets; we accept a
+    # restart in v2.2 and surface a hint when the user changes it.
+    def _on_language_changed(_code: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            window,
+            "Language",
+            "Language has been saved. Restart the app to apply the new "
+            "interface language.",
+        )
+    state.language_changed.connect(_on_language_changed)
 
     # ----- Tray + scheduler -----
     tray = TrayController(window, icon=icon if not icon.isNull() else None)

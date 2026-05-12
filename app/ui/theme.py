@@ -1,46 +1,109 @@
-"""Qt Style Sheet for the dark theme.
+"""Qt Style Sheet generated from a palette.
 
-A single QSS string applied at the QApplication level so every widget
-inherits consistent colors and shapes. Tweak the palette constants below
-to retheme the whole app.
+A single function `build_stylesheet(palette)` returns the QSS string.
+Two presets are exported: DARK_PALETTE (default) and LIGHT_PALETTE.
 """
+from __future__ import annotations
 
-# Palette
-BG_APP = "#1a1b1f"
-BG_SIDEBAR = "#15161a"
-BG_CARD = "#22232a"
-BG_CARD_HOVER = "#2a2c34"
-BG_INPUT = "#1f2026"
-BORDER = "#2c2e36"
-TEXT = "#e6e7eb"
-TEXT_DIM = "#9ba0ab"
-TEXT_FAINT = "#6b7079"
-ACCENT = "#7c8cff"
-ACCENT_HOVER = "#9aa6ff"
-ACCENT_ACTIVE = "#5d6cff"
-DANGER = "#ff6b6b"
-SUCCESS = "#4ade80"
+from dataclasses import dataclass
 
 
-STYLESHEET = f"""
+@dataclass(frozen=True)
+class Palette:
+    bg_app: str
+    bg_sidebar: str
+    bg_card: str
+    bg_card_hover: str
+    bg_input: str
+    border: str
+    text: str
+    text_dim: str
+    text_faint: str
+    accent: str
+    accent_hover: str
+    accent_active: str
+    danger: str
+    success: str
+    statusbar_bg: str
+
+
+DARK_PALETTE = Palette(
+    bg_app="#1a1b1f",
+    bg_sidebar="#15161a",
+    bg_card="#22232a",
+    bg_card_hover="#2a2c34",
+    bg_input="#1f2026",
+    border="#2c2e36",
+    text="#e6e7eb",
+    text_dim="#9ba0ab",
+    text_faint="#6b7079",
+    accent="#7c8cff",
+    accent_hover="#9aa6ff",
+    accent_active="#5d6cff",
+    danger="#ff6b6b",
+    success="#4ade80",
+    statusbar_bg="#15161a",
+)
+
+
+LIGHT_PALETTE = Palette(
+    bg_app="#f5f6f8",
+    bg_sidebar="#eceef2",
+    bg_card="#ffffff",
+    bg_card_hover="#f5f7fb",
+    bg_input="#ffffff",
+    border="#dadde3",
+    text="#1a1b1f",
+    text_dim="#5a606b",
+    text_faint="#888d97",
+    accent="#4a5bff",
+    accent_hover="#3947f0",
+    accent_active="#2a39d8",
+    danger="#dc2626",
+    success="#16a34a",
+    statusbar_bg="#e6e8ec",
+)
+
+
+THEMES = {"dark": DARK_PALETTE, "light": LIGHT_PALETTE}
+
+
+def build_stylesheet(p: Palette) -> str:
+    info_banner_bg = (
+        "rgba(124, 140, 255, 0.10)" if p is DARK_PALETTE
+        else "rgba(74, 91, 255, 0.08)"
+    )
+    info_banner_border = (
+        "rgba(124, 140, 255, 0.30)" if p is DARK_PALETTE
+        else "rgba(74, 91, 255, 0.25)"
+    )
+    chip_accent_bg = (
+        "rgba(124, 140, 255, 0.20)" if p is DARK_PALETTE
+        else "rgba(74, 91, 255, 0.12)"
+    )
+    chip_accent_border = (
+        "rgba(124, 140, 255, 0.40)" if p is DARK_PALETTE
+        else "rgba(74, 91, 255, 0.35)"
+    )
+
+    return f"""
 * {{
-    color: {TEXT};
+    color: {p.text};
     font-family: "Segoe UI", "SF Pro Text", Arial, sans-serif;
     font-size: 13px;
 }}
 
 QMainWindow, QWidget#contentArea, QWidget#pageRoot {{
-    background-color: {BG_APP};
+    background-color: {p.bg_app};
 }}
 
-/* ------- Sidebar ------- */
 QFrame#sidebar {{
-    background-color: {BG_SIDEBAR};
+    background-color: {p.bg_sidebar};
     border: none;
 }}
 
 QLabel#appTitle {{
-    color: {TEXT};
+    color: {p.text};
     font-size: 14px;
     font-weight: 600;
     padding: 14px 18px 18px 18px;
@@ -50,7 +113,7 @@ QPushButton#navItem {{
     text-align: left;
     background-color: transparent;
     border: none;
-    color: {TEXT_DIM};
+    color: {p.text_dim};
     padding: 10px 18px;
     margin: 1px 8px;
     border-radius: 8px;
@@ -58,65 +121,62 @@ QPushButton#navItem {{
 }}
 
 QPushButton#navItem:hover {{
-    background-color: {BG_CARD};
-    color: {TEXT};
+    background-color: {p.bg_card};
+    color: {p.text};
 }}
 
 QPushButton#navItem:checked {{
-    background-color: {BG_CARD};
-    color: {TEXT};
+    background-color: {p.bg_card};
+    color: {p.text};
     font-weight: 600;
-    border-left: 3px solid {ACCENT};
+    border-left: 3px solid {p.accent};
     padding-left: 15px;
 }}
 
-/* ------- Top bar (folder picker) ------- */
 QFrame#topBar {{
-    background-color: {BG_APP};
-    border-bottom: 1px solid {BORDER};
+    background-color: {p.bg_app};
+    border-bottom: 1px solid {p.border};
 }}
 
 QLabel#topBarTitle {{
     font-size: 13px;
-    color: {TEXT_DIM};
+    color: {p.text_dim};
 }}
 
 QPushButton#folderPicker {{
-    background-color: {BG_CARD};
-    border: 1px solid {BORDER};
+    background-color: {p.bg_card};
+    border: 1px solid {p.border};
     border-radius: 8px;
     padding: 7px 12px;
-    color: {TEXT};
+    color: {p.text};
     text-align: left;
 }}
 
 QPushButton#folderPicker:hover {{
-    background-color: {BG_CARD_HOVER};
+    background-color: {p.bg_card_hover};
 }}
 
-/* ------- Headings ------- */
 QLabel#pageTitle {{
-    color: {TEXT};
+    color: {p.text};
     font-size: 22px;
     font-weight: 600;
 }}
 
 QLabel#pageSubtitle {{
-    color: {TEXT_DIM};
+    color: {p.text_dim};
     font-size: 12px;
 }}
 
 QLabel#sectionLabel {{
-    color: {TEXT_FAINT};
+    color: {p.text_faint};
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.5px;
     text-transform: uppercase;
 }}
 
-/* ------- Primary button ------- */
 QPushButton#primary {{
-    background-color: {ACCENT};
+    background-color: {p.accent};
     color: white;
     border: none;
     border-radius: 8px;
@@ -124,100 +184,76 @@ QPushButton#primary {{
     font-weight: 600;
 }}
 
-QPushButton#primary:hover {{
-    background-color: {ACCENT_HOVER};
-}}
-
-QPushButton#primary:pressed {{
-    background-color: {ACCENT_ACTIVE};
+QPushButton#primary:hover {{ background-color: {p.accent_hover}; }}
+QPushButton#primary:pressed {{ background-color: {p.accent_active}; }}
+QPushButton#primary:disabled {{
+    background-color: {p.border};
+    color: {p.text_faint};
 }}
 
 QPushButton#secondary {{
     background-color: transparent;
-    border: 1px solid {BORDER};
+    border: 1px solid {p.border};
     border-radius: 8px;
     padding: 7px 14px;
-    color: {TEXT};
+    color: {p.text};
 }}
 
-QPushButton#secondary:hover {{
-    background-color: {BG_CARD};
-}}
+QPushButton#secondary:hover {{ background-color: {p.bg_card}; }}
 
-/* Small icon-style buttons (edit / delete / menu / drag handle).
-   The text is a unicode glyph so we just need decent contrast + hover. */
 QPushButton#iconBtn {{
     background-color: transparent;
-    border: 1px solid {BORDER};
+    border: 1px solid {p.border};
     border-radius: 8px;
-    color: {TEXT_DIM};
+    color: {p.text_dim};
     padding: 0px;
     font-size: 14px;
 }}
 
 QPushButton#iconBtn:hover {{
-    background-color: {BG_CARD_HOVER};
-    color: {TEXT};
-    border-color: {TEXT_FAINT};
-}}
-
-QPushButton#iconBtnDanger:hover {{
-    color: {DANGER};
-    border-color: {DANGER};
+    background-color: {p.bg_card_hover};
+    color: {p.text};
+    border-color: {p.text_faint};
 }}
 
 QLabel#dragHandle {{
-    color: {TEXT_FAINT};
+    color: {p.text_faint};
     font-size: 18px;
     padding: 0 6px;
 }}
 
-QLabel#dragHandle:hover {{
-    color: {TEXT};
-}}
+QLabel#dragHandle:hover {{ color: {p.text}; }}
 
-QPushButton#primary:disabled {{
-    background-color: {BORDER};
-    color: {TEXT_FAINT};
-}}
-
-QFrame#card:hover {{
-    border-color: #3a3d46;
-}}
-
-/* ------- Cards ------- */
 QFrame#card {{
-    background-color: {BG_CARD};
-    border: 1px solid {BORDER};
+    background-color: {p.bg_card};
+    border: 1px solid {p.border};
     border-radius: 12px;
 }}
 
+QFrame#card:hover {{ border-color: {p.text_faint}; }}
+
 QFrame#infoBanner {{
-    background-color: rgba(124, 140, 255, 0.10);
-    border: 1px solid rgba(124, 140, 255, 0.30);
+    background-color: {info_banner_bg};
+    border: 1px solid {info_banner_border};
     border-radius: 10px;
 }}
 
-QLabel#infoBannerText {{
-    color: {TEXT_DIM};
-}}
+QLabel#infoBannerText {{ color: {p.text_dim}; }}
 
-/* ------- Inputs ------- */
 QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit {{
-    background-color: {BG_INPUT};
-    border: 1px solid {BORDER};
+    background-color: {p.bg_input};
+    border: 1px solid {p.border};
     border-radius: 8px;
     padding: 8px 12px;
-    color: {TEXT};
-    selection-background-color: {ACCENT};
+    color: {p.text};
+    selection-background-color: {p.accent};
 }}
 
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus,
 QPlainTextEdit:focus, QTextEdit:focus {{
-    border-color: {ACCENT};
+    border-color: {p.accent};
 }}
 
-/* ------- ScrollBar ------- */
 QScrollBar:vertical {{
     background: transparent;
     width: 10px;
@@ -225,14 +261,12 @@ QScrollBar:vertical {{
 }}
 
 QScrollBar::handle:vertical {{
-    background: {BG_CARD_HOVER};
+    background: {p.bg_card_hover};
     border-radius: 5px;
     min-height: 24px;
 }}
 
-QScrollBar::handle:vertical:hover {{
-    background: {TEXT_FAINT};
-}}
+QScrollBar::handle:vertical:hover {{ background: {p.text_faint}; }}
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
@@ -245,111 +279,143 @@ QScrollBar:horizontal {{
 }}
 
 QScrollBar::handle:horizontal {{
-    background: {BG_CARD_HOVER};
+    background: {p.bg_card_hover};
     border-radius: 5px;
     min-width: 24px;
 }}
 
-/* ------- Toggle switch (we use QCheckBox with custom indicator) ------- */
-QCheckBox#toggle::indicator {{
-    width: 36px;
-    height: 20px;
-    border-radius: 10px;
-    background-color: {BG_INPUT};
-    border: 1px solid {BORDER};
-}}
-
-QCheckBox#toggle::indicator:checked {{
-    background-color: {ACCENT};
-    border-color: {ACCENT};
-}}
-
-/* ------- Radio buttons ------- */
-QRadioButton {{
-    color: {TEXT};
-    spacing: 8px;
-    padding: 2px 0;
-}}
+QRadioButton {{ color: {p.text}; spacing: 8px; padding: 2px 0; }}
 
 QRadioButton::indicator {{
     width: 16px;
     height: 16px;
     border-radius: 9px;
-    border: 2px solid {TEXT_FAINT};
+    border: 2px solid {p.text_faint};
     background-color: transparent;
 }}
 
-QRadioButton::indicator:hover {{
-    border-color: {TEXT_DIM};
-}}
+QRadioButton::indicator:hover {{ border-color: {p.text_dim}; }}
 
 QRadioButton::indicator:checked {{
-    border-color: {ACCENT};
-    background-color: {ACCENT};
+    border-color: {p.accent};
+    background-color: {p.accent};
 }}
 
-/* ------- Combo box dropdown contents ------- */
 QComboBox QAbstractItemView {{
-    background-color: {BG_CARD};
-    border: 1px solid {BORDER};
-    selection-background-color: {ACCENT};
+    background-color: {p.bg_card};
+    border: 1px solid {p.border};
+    selection-background-color: {p.accent};
     selection-color: white;
-    color: {TEXT};
+    color: {p.text};
     padding: 4px;
 }}
 
-QComboBox::drop-down {{
-    width: 18px;
-    border: none;
-}}
-
-QComboBox::down-arrow {{
-    width: 0;
-    height: 0;
-}}
+QComboBox::drop-down {{ width: 18px; border: none; }}
+QComboBox::down-arrow {{ width: 0; height: 0; }}
 
 QSpinBox::up-button, QSpinBox::down-button {{
-    background-color: {BG_CARD};
+    background-color: {p.bg_card};
     border: none;
     width: 16px;
 }}
 
-QSpinBox::up-arrow, QSpinBox::down-arrow {{
-    width: 0;
-    height: 0;
-}}
+QSpinBox::up-arrow, QSpinBox::down-arrow {{ width: 0; height: 0; }}
 
 QPlainTextEdit {{
     font-family: "Consolas", "Cascadia Mono", monospace;
     font-size: 12px;
 }}
 
-/* ------- Progress bar ------- */
 QProgressBar {{
-    background-color: {BG_INPUT};
+    background-color: {p.bg_input};
     border: none;
     border-radius: 3px;
 }}
 
 QProgressBar::chunk {{
-    background-color: {ACCENT};
+    background-color: {p.accent};
     border-radius: 3px;
 }}
 
-/* ------- Status chip ------- */
 QLabel#chipNeutral {{
-    background-color: {BG_INPUT};
-    color: {TEXT_DIM};
-    border: 1px solid {BORDER};
+    background-color: {p.bg_input};
+    color: {p.text_dim};
+    border: 1px solid {p.border};
     border-radius: 10px;
     padding: 2px 10px;
 }}
 
 QLabel#chipAccent {{
-    background-color: rgba(124, 140, 255, 0.20);
-    color: {ACCENT};
-    border: 1px solid rgba(124, 140, 255, 0.40);
+    background-color: {chip_accent_bg};
+    color: {p.accent};
+    border: 1px solid {chip_accent_border};
     border-radius: 10px;
     padding: 2px 10px;
 }}
+
+QStatusBar {{
+    background: {p.statusbar_bg};
+    color: {p.text_dim};
+    border-top: 1px solid {p.border};
+}}
+
+QStatusBar::item {{ border: none; }}
+
+QMenu {{
+    background-color: {p.bg_card};
+    border: 1px solid {p.border};
+    color: {p.text};
+    padding: 4px;
+}}
+
+QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}
+QMenu::item:selected {{ background-color: {p.accent}; color: white; }}
+
+QToolTip {{
+    background-color: {p.bg_card};
+    color: {p.text};
+    border: 1px solid {p.border};
+    padding: 4px 6px;
+}}
 """
+
+
+_active_palette: Palette = DARK_PALETTE
+
+
+def active_palette() -> Palette:
+    """Current palette used by hand-painted widgets (Toggle, ColorDot, Chip)."""
+    return _active_palette
+
+
+def is_dark() -> bool:
+    return _active_palette is DARK_PALETTE
+
+
+# A Qt-style signal that widgets can subscribe to when they need to
+# repaint themselves on a theme switch (e.g. Chip, EmptyState, anything
+# that hand-applies inline QSS at construction time).
+from PySide6.QtCore import QObject, Signal
+
+
+class _ThemeBus(QObject):
+    palette_changed = Signal()
+
+
+_bus = _ThemeBus()
+
+
+def palette_signal():
+    return _bus.palette_changed
+
+
+def set_active_palette(p: Palette) -> None:
+    global _active_palette
+    if p is _active_palette:
+        return
+    _active_palette = p
+    _bus.palette_changed.emit()
+
+
+# Backwards-compat constants — modules that imported these still work.
+STYLESHEET = build_stylesheet(DARK_PALETTE)
