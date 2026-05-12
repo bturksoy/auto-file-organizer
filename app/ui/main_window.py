@@ -141,11 +141,21 @@ class MainWindow(QMainWindow):
         bar.setFixedHeight(56)
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 10, 18, 10)
+        layout.setSpacing(8)
 
         breadcrumb = QLabel("→  Auto File Organizer")
         breadcrumb.setObjectName("topBarTitle")
         layout.addWidget(breadcrumb)
         layout.addStretch(1)
+
+        self._theme_button = QPushButton()
+        self._theme_button.setObjectName("iconBtn")
+        self._theme_button.setFixedSize(34, 34)
+        self._theme_button.setCursor(Qt.PointingHandCursor)
+        self._theme_button.setToolTip("Toggle dark / light theme (Ctrl+T)")
+        self._theme_button.clicked.connect(self._toggle_theme)
+        self._refresh_theme_button_glyph()
+        layout.addWidget(self._theme_button)
 
         self.folder_button = QPushButton("\U0001F4C1  Pick folder…")
         self.folder_button.setObjectName("folderPicker")
@@ -155,7 +165,15 @@ class MainWindow(QMainWindow):
             "in this window.")
         self.folder_button.clicked.connect(self._pick_folder)
         layout.addWidget(self.folder_button)
+        self._state.theme_changed.connect(
+            lambda _: self._refresh_theme_button_glyph())
         return bar
+
+    def _refresh_theme_button_glyph(self) -> None:
+        """Show a sun while in dark mode (so the user 'goes light') and a moon
+        otherwise. Keeps the same button slot regardless of theme state."""
+        glyph = "☀" if self._state.data.theme == "dark" else "☾"
+        self._theme_button.setText(glyph)
 
     def _build_statusbar(self) -> None:
         # All colors come from the active QSS stylesheet.

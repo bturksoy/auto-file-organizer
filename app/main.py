@@ -131,25 +131,16 @@ def main() -> int:
     _apply_theme(state.data.theme)
     state.theme_changed.connect(_apply_theme)
 
-    window = MainWindow(state)
-    if not icon.isNull():
-        window.setWindowIcon(icon)
+    # ----- Tray + scheduler (live across language switches) -----
+    # Mutable holder so closures can resolve the current window even after
+    # a language-driven rebuild swaps it out.
+    holder: dict = {"window": None}
 
-    # Language hot-swap requires rebuilding many widgets; we accept a
-    # restart in v2.2 and surface a hint when the user changes it.
-    def _on_language_changed(_code: str) -> None:
-        from PySide6.QtWidgets import QMessageBox
-        QMessageBox.information(
-            window,
-            "Language",
-            "Language has been saved. Restart the app to apply the new "
-            "interface language.",
-        )
-    state.language_changed.connect(_on_language_changed)
-
-    # ----- Tray + scheduler -----
-    tray = TrayController(window, icon=icon if not icon.isNull() else None)
+    tray = TrayController(parent=None, icon=icon if not icon.isNull() else None)
     scheduler = Scheduler(state)
+
+    def current_window():
+        return holder["window"]
 
     def update_tray_visibility():
         profile = state.active_profile()
@@ -162,9 +153,12 @@ def main() -> int:
             scheduler.stop()
 
     def show_window():
-        window.showNormal()
-        window.activateWindow()
-        window.raise_()
+        w = current_window()
+        if w is None:
+            return
+        w.showNormal()
+        w.activateWindow()
+        w.raise_()
 
     def on_pause_toggle():
         paused = scheduler.toggle_pause()
@@ -189,34 +183,58 @@ def main() -> int:
 
     state.profiles_changed.connect(update_tray_visibility)
     state.active_profile_changed.connect(update_tray_visibility)
-    update_tray_visibility()
-
-    # ----- Override close behavior when auto-organize is on -----
-    def close_event(event):
-        profile = state.active_profile()
-        if profile and profile.settings.auto_organize:
-            event.ignore()
-            window.hide()
-        else:
-            event.accept()
-    window.closeEvent = close_event  # type: ignore[assignment]
-
-    # Optional: start hidden if user opted in.
-    active = state.active_profile()
-    if active and active.settings.auto_organize and active.settings.start_in_tray:
-        window.hide()
-    else:
-        window.show()
 
     # ----- Auto-update flow -----
     bridge = _UpdateBridge()
     bridge.update_available.connect(
-        lambda info: _prompt_update(window, info, state, bridge)
+        lambda info: _prompt_update(current_window(), info, state, bridge)
     )
     bridge.update_done.connect(lambda: os._exit(0))
     bridge.update_failed.connect(
-        lambda err: QMessageBox.warning(window, "Update failed", err)
+        lambda err: QMessageBox.warning(
+            current_window(), "Update failed", err)
     )
+
+    def _build_window() -> MainWindow:
+        win = MainWindow(state)
+        if not icon.isNull():
+            win.setWindowIcon(icon)
+
+        def close_event(event):
+            profile = state.active_profile()
+            if profile and profile.settings.auto_organize:
+                event.ignore()
+                win.hide()
+            else:
+                event.accept()
+        win.closeEvent = close_event  # type: ignore[assignment]
+        return win
+
+    def _on_language_changed(_code: str) -> None:
+        # Hot-swap: build a new MainWindow with refreshed strings, then
+        # dispose of the old one. State (profiles, current folder) lives
+        # in AppState, so the new window picks everything up.
+        old = holder["window"]
+        geometry = old.geometry() if old else None
+        new = _build_window()
+        if geometry is not None:
+            new.setGeometry(geometry)
+        new.show()
+        holder["window"] = new
+        if old is not None:
+            old.deleteLater()
+    state.language_changed.connect(_on_language_changed)
+
+    holder["window"] = _build_window()
+    update_tray_visibility()
+
+    # Optional: start hidden if user opted in.
+    active = state.active_profile()
+    if active and active.settings.auto_organize and active.settings.start_in_tray:
+        holder["window"].hide()
+    else:
+        holder["window"].show()
+
     QTimer.singleShot(800, lambda: _spawn_update_check(state, bridge))
 
     return app.exec()

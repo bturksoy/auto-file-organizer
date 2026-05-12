@@ -111,7 +111,11 @@ class ProfileSettings:
     organization_mode: str = "rules_then_categories"
     show_notifications: bool = True
     destination_folder: str = ""
+    # `watched_folder` (singular) is kept for backwards compatibility with
+    # v2.1-v2.3 settings files; `watched_folders` (plural) is the source
+    # of truth going forward and is what the scheduler iterates.
     watched_folder: str = ""
+    watched_folders: list[str] = field(default_factory=list)
     auto_organize: bool = False
     auto_interval_min: int = 30
     start_in_tray: bool = False
@@ -123,11 +127,19 @@ class ProfileSettings:
         mode = str(d.get("organization_mode") or "rules_then_categories")
         if mode not in ORG_MODES:
             mode = "rules_then_categories"
+        legacy = str(d.get("watched_folder", "") or "").strip()
+        folders = [
+            str(p).strip() for p in (d.get("watched_folders") or [])
+            if str(p).strip()
+        ]
+        if legacy and legacy not in folders:
+            folders.insert(0, legacy)
         return ProfileSettings(
             organization_mode=mode,
             show_notifications=bool(d.get("show_notifications", True)),
             destination_folder=str(d.get("destination_folder", "")),
-            watched_folder=str(d.get("watched_folder", "")),
+            watched_folder=legacy,
+            watched_folders=folders,
             auto_organize=bool(d.get("auto_organize", False)),
             auto_interval_min=max(1, int(d.get("auto_interval_min", 30) or 30)),
             start_in_tray=bool(d.get("start_in_tray", False)),

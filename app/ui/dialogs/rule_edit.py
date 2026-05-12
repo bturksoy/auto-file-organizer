@@ -3,15 +3,24 @@ from __future__ import annotations
 
 import uuid
 
-from PySide6.QtCore import Qt
+import threading
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.core.classifier import _file_meta, _rule_matches
 from app.core.models import (
     ACTION_TYPES, CONDITION_TYPES, Action, Category, Condition, Rule,
 )
+
+
+class _TestBridge(QObject):
+    """Bridge for marshalling test-rule counts back to the GUI thread."""
+    counted = Signal(int)
 
 
 _CONDITION_HELP = {
@@ -95,13 +104,18 @@ class _ConditionRow(QWidget):
 
 class RuleEditDialog(QDialog):
     def __init__(self, *, rule: Rule | None = None,
-                 categories: list[Category], parent=None) -> None:
+                 categories: list[Category],
+                 test_folder: Path | None = None,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit rule" if rule else "New rule")
         self.setMinimumWidth(540)
 
         self._original = rule
         self._categories = categories
+        self._test_folder = test_folder
+        self._test_bridge = _TestBridge()
+        self._test_bridge.counted.connect(self._on_test_counted)
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
@@ -173,6 +187,23 @@ class RuleEditDialog(QDialog):
             self.action_target_edit.setText(rule.action.target)
         self._action_changed()
 
+        # Live test row — runs the in-progress rule against the current
+        # folder and shows the match count.
+        test_row = QHBoxLayout()
+        self._test_btn = QPushButton("Test against current folder")
+        self._test_btn.setObjectName("secondary")
+        self._test_btn.setCursor(Qt.PointingHandCursor)
+        self._test_btn.clicked.connect(self._run_test)
+        if not self._test_folder:
+            self._test_btn.setEnabled(False)
+            self._test_btn.setToolTip(
+                "Pick a folder in the main window first to enable testing.")
+        test_row.addWidget(self._test_btn)
+        self._test_result = QLabel("")
+        self._test_result.setStyleSheet("color: #9ba0ab; padding-left: 10px;")
+        test_row.addWidget(self._test_result, stretch=1)
+        outer.addLayout(test_row)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
@@ -206,6 +237,42 @@ class RuleEditDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(self, "Pick destination")
         if folder:
             self.action_target_edit.setText(folder)
+
+    def _run_test(self) -> None:
+        if not self._test_folder or not self._test_folder.is_dir():
+            return
+        rule = self.result_rule()
+        # Don't mutate the original until the dialog is saved.
+        if self._original is not None:
+            import copy as _copy
+            rule = _copy.copy(rule)
+        self._test_result.setText("Scanning...")
+        self._test_btn.setEnabled(False)
+        folder = self._test_folder
+
+        def work() -> None:
+            count = 0
+            try:
+                for entry in folder.iterdir():
+                    if not entry.is_file():
+                        continue
+                    if entry.name.startswith("."):
+                        continue
+                    if _rule_matches(rule, _file_meta(entry)):
+                        count += 1
+            except OSError:
+                pass
+            self._test_bridge.counted.emit(count)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_test_counted(self, count: int) -> None:
+        if count == 0:
+            self._test_result.setText("No matches in the current folder.")
+        elif count == 1:
+            self._test_result.setText("1 file would match.")
+        else:
+            self._test_result.setText(f"{count} files would match.")
+        self._test_btn.setEnabled(True)
 
     def _on_accept(self) -> None:
         if not self.name_edit.text().strip():

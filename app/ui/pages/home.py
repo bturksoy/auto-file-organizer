@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from app.core.i18n import i18n
 from app.core.organize import apply_plan, scan_folder, undo_last
 from app.core.state import AppState
+from app.ui.dialogs.stats import StatsDialog
 from app.ui.pages.base_page import BasePage, InfoBanner
 from app.ui.theme import active_palette, palette_signal
 
@@ -260,12 +261,14 @@ class HomePage(BasePage):
         self._append_log(
             f"Done. Moved {moved}, errors {errors}, {secs:.1f}s")
         self._set_busy(False)
-        if self._state.last_result and self._state.last_result.moved:
-            QMessageBox.information(
-                self, "Organize complete",
-                f"Moved {moved} file(s) in {secs:.1f}s\n"
-                f"Errors: {errors}",
-            )
+        result = self._state.last_result
+        if result and result.moved:
+            profile = self._state.active_profile()
+            lookup = None
+            if profile:
+                names = {c.id: c.name for c in profile.categories}
+                lookup = names.get
+            StatsDialog(result, category_lookup=lookup, parent=self).exec()
 
     def _open_in_explorer(self) -> None:
         folder = self._state.current_folder

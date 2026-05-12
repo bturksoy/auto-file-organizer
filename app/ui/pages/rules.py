@@ -131,7 +131,11 @@ class RulesPage(BasePage):
         profile = self._state.active_profile()
         if not profile:
             return
-        dlg = RuleEditDialog(categories=profile.categories, parent=self)
+        dlg = RuleEditDialog(
+            categories=profile.categories,
+            test_folder=self._state.current_folder,
+            parent=self,
+        )
         if dlg.exec():
             profile.rules.append(dlg.result_rule())
             self._state.save()
@@ -145,8 +149,11 @@ class RulesPage(BasePage):
         target = next((r for r in profile.rules if r.id == rule_id), None)
         if not target:
             return
-        dlg = RuleEditDialog(rule=target, categories=profile.categories,
-                             parent=self)
+        dlg = RuleEditDialog(
+            rule=target, categories=profile.categories,
+            test_folder=self._state.current_folder,
+            parent=self,
+        )
         if dlg.exec():
             self._state.save()
             self._refresh()

@@ -71,23 +71,32 @@ class Scheduler(QObject):
                 slept += 1
 
     def _run_one_pass(self) -> None:
+        """Run organize against every watched folder of the active profile."""
         profile = self._state.active_profile()
         if not profile or not profile.settings.auto_organize:
             return
-        target = (profile.settings.watched_folder or "").strip()
-        if not target:
+        targets = [
+            f.strip() for f in (profile.settings.watched_folders or [])
+            if f and f.strip()
+        ]
+        # Legacy single-folder fallback for very old configs.
+        if not targets and profile.settings.watched_folder:
+            targets = [profile.settings.watched_folder.strip()]
+        if not targets:
             return
-        folder = Path(target)
-        if not folder.is_dir():
-            return
-        try:
-            plan = scan_folder(folder, profile)
-            if not plan:
-                return
-            result = apply_plan(folder, plan)
-            if result.moved > 0:
-                self.pass_complete.emit(str(folder), result.moved)
-        except Exception:
-            # Silent failure — UI surfaces this via tray notifications
-            # only when the user has notifications on.
-            pass
+
+        for target in targets:
+            folder = Path(target)
+            if not folder.is_dir():
+                continue
+            try:
+                plan = scan_folder(folder, profile)
+                if not plan:
+                    continue
+                result = apply_plan(folder, plan)
+                if result.moved > 0:
+                    self.pass_complete.emit(str(folder), result.moved)
+            except Exception:
+                # Silent failure — UI surfaces this via tray notifications
+                # only when the user has notifications on.
+                continue

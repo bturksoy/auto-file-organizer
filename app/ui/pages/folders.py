@@ -65,19 +65,36 @@ class FoldersPage(BasePage):
 
     def _build_watched_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("Watched folder (background mode)"))
-        body = QHBoxLayout()
-        self._watch_edit = QLineEdit()
-        self._watch_edit.setPlaceholderText(
-            "e.g. C:\\Users\\You\\Downloads")
-        self._watch_edit.editingFinished.connect(self._save_watched)
-        body.addWidget(self._watch_edit, stretch=1)
-        browse = QPushButton("Browse...")
-        browse.setObjectName("secondary")
-        browse.setCursor(Qt.PointingHandCursor)
-        browse.clicked.connect(self._pick_watched)
-        body.addWidget(browse)
-        card.layout().addLayout(body)
+        card.layout().addWidget(self._h2("Watched folders (background mode)"))
+        hint = QLabel(
+            "Each folder listed here is scanned on the auto-organize "
+            "schedule. Add as many as you like — Downloads, Desktop, "
+            "Pictures, anything that fills up."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #9ba0ab;")
+        card.layout().addWidget(hint)
+
+        self._watch_list = QListWidget()
+        self._watch_list.setStyleSheet(
+            "QListWidget { background: transparent; border: none; }"
+            " QListWidget::item { padding: 6px 4px; }"
+        )
+        card.layout().addWidget(self._watch_list)
+
+        row = QHBoxLayout()
+        add = QPushButton("+ Add folder")
+        add.setObjectName("secondary")
+        add.setCursor(Qt.PointingHandCursor)
+        add.clicked.connect(self._add_watched)
+        row.addWidget(add)
+        remove = QPushButton("Remove selected")
+        remove.setObjectName("secondary")
+        remove.setCursor(Qt.PointingHandCursor)
+        remove.clicked.connect(self._remove_watched)
+        row.addWidget(remove)
+        row.addStretch(1)
+        card.layout().addLayout(row)
         return card
 
     # ----- recent -----
@@ -107,10 +124,13 @@ class FoldersPage(BasePage):
         profile = self._state.active_profile()
         if not profile:
             self._dest_edit.setText("")
-            self._watch_edit.setText("")
+            self._watch_list.clear()
             return
         self._dest_edit.setText(profile.settings.destination_folder)
-        self._watch_edit.setText(profile.settings.watched_folder)
+        self._watch_list.clear()
+        for folder in profile.settings.watched_folders:
+            item = QListWidgetItem(folder)
+            self._watch_list.addItem(item)
 
     def _refresh_recent(self) -> None:
         self._recent_list.clear()
@@ -132,18 +152,40 @@ class FoldersPage(BasePage):
         profile.settings.destination_folder = self._dest_edit.text().strip()
         self._state.save()
 
-    def _pick_watched(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Watched folder")
-        if folder:
-            self._watch_edit.setText(folder)
-            self._save_watched()
-
-    def _save_watched(self) -> None:
+    def _add_watched(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Add watched folder")
+        if not folder:
+            return
         profile = self._state.active_profile()
         if not profile:
             return
-        profile.settings.watched_folder = self._watch_edit.text().strip()
+        if folder in profile.settings.watched_folders:
+            return
+        profile.settings.watched_folders.append(folder)
+        # Keep legacy single-folder field in sync with the first entry so
+        # older builds reading the same appdata.json still see something.
+        if not profile.settings.watched_folder:
+            profile.settings.watched_folder = folder
         self._state.save()
+        self._refresh_paths()
+
+    def _remove_watched(self) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        selected = self._watch_list.selectedItems()
+        if not selected:
+            return
+        keep = []
+        removed = {item.text() for item in selected}
+        for folder in profile.settings.watched_folders:
+            if folder not in removed:
+                keep.append(folder)
+        profile.settings.watched_folders = keep
+        if profile.settings.watched_folder in removed:
+            profile.settings.watched_folder = keep[0] if keep else ""
+        self._state.save()
+        self._refresh_paths()
 
     def _open_recent(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.UserRole)
