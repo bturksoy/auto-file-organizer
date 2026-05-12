@@ -223,6 +223,78 @@ QCheckBox#toggle::indicator:checked {{
     border-color: {ACCENT};
 }}
 
+/* ------- Radio buttons ------- */
+QRadioButton {{
+    color: {TEXT};
+    spacing: 8px;
+    padding: 2px 0;
+}}
+
+QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: 9px;
+    border: 2px solid {TEXT_FAINT};
+    background-color: transparent;
+}}
+
+QRadioButton::indicator:hover {{
+    border-color: {TEXT_DIM};
+}}
+
+QRadioButton::indicator:checked {{
+    border-color: {ACCENT};
+    background-color: {ACCENT};
+}}
+
+/* ------- Combo box dropdown contents ------- */
+QComboBox QAbstractItemView {{
+    background-color: {BG_CARD};
+    border: 1px solid {BORDER};
+    selection-background-color: {ACCENT};
+    selection-color: white;
+    color: {TEXT};
+    padding: 4px;
+}}
+
+QComboBox::drop-down {{
+    width: 18px;
+    border: none;
+}}
+
+QComboBox::down-arrow {{
+    width: 0;
+    height: 0;
+}}
+
+QSpinBox::up-button, QSpinBox::down-button {{
+    background-color: {BG_CARD};
+    border: none;
+    width: 16px;
+}}
+
+QSpinBox::up-arrow, QSpinBox::down-arrow {{
+    width: 0;
+    height: 0;
+}}
+
+QPlainTextEdit {{
+    font-family: "Consolas", "Cascadia Mono", monospace;
+    font-size: 12px;
+}}
+
+/* ------- Progress bar ------- */
+QProgressBar {{
+    background-color: {BG_INPUT};
+    border: none;
+    border-radius: 3px;
+}}
+
+QProgressBar::chunk {{
+    background-color: {ACCENT};
+    border-radius: 3px;
+}}
+
 /* ------- Status chip ------- */
 QLabel#chipNeutral {{
     background-color: {BG_INPUT};

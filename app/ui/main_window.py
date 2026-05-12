@@ -1,4 +1,4 @@
-"""Top-level QMainWindow: sidebar + top folder picker + stacked pages."""
+"""Top-level QMainWindow: sidebar + top bar + stacked pages."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
+from app.core.state import AppState
 from app.ui.pages.categories import CategoriesPage
 from app.ui.pages.folders import FoldersPage
 from app.ui.pages.home import HomePage
@@ -19,14 +20,15 @@ from app.ui.sidebar import Sidebar
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, state: AppState) -> None:
         super().__init__()
+        self._state = state
         self.setWindowTitle("Auto File Organizer")
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
-
-        self._current_folder: Path | None = None
         self._build()
+        self._state.folder_changed.connect(self._on_folder_changed)
+        self._on_folder_changed(self._state.current_folder)
 
     def _build(self) -> None:
         root = QWidget()
@@ -49,12 +51,12 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._pages = {
-            "home": HomePage(),
-            "folders": FoldersPage(),
-            "rules": RulesPage(),
-            "categories": CategoriesPage(),
-            "profiles": ProfilesPage(),
-            "settings": SettingsPage(),
+            "home": HomePage(self._state),
+            "folders": FoldersPage(self._state),
+            "rules": RulesPage(self._state),
+            "categories": CategoriesPage(self._state),
+            "profiles": ProfilesPage(self._state),
+            "settings": SettingsPage(self._state),
         }
         for page in self._pages.values():
             self._stack.addWidget(page)
@@ -92,15 +94,13 @@ class MainWindow(QMainWindow):
     def _pick_folder(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, "Select folder")
         if chosen:
-            self._current_folder = Path(chosen)
-            self._refresh_folder_button()
+            self._state.set_folder(Path(chosen))
 
-    def _refresh_folder_button(self) -> None:
-        if not self._current_folder:
+    def _on_folder_changed(self, folder: Path | None) -> None:
+        if not folder:
             self.folder_button.setText("\U0001F4C1  Pick folder…")
             return
-        # Truncate long paths from the left for readability.
-        path_str = str(self._current_folder)
+        path_str = str(folder)
         if len(path_str) > 48:
             path_str = "…" + path_str[-46:]
         self.folder_button.setText(f"\U0001F4C1  {path_str}")
