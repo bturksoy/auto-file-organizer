@@ -44,20 +44,24 @@ class CategoryCard(Card):
         if category.locked:
             lock = QLabel("🔒")
             lock.setStyleSheet("color: #6b7079;")
+            lock.setToolTip("Built-in category (cannot be deleted)")
             header.addWidget(lock)
         else:
             self.edit_btn = QPushButton("✎")
-            self.edit_btn.setObjectName("secondary")
+            self.edit_btn.setObjectName("iconBtn")
             self.edit_btn.setCursor(Qt.PointingHandCursor)
-            self.edit_btn.setFixedSize(28, 28)
+            self.edit_btn.setFixedSize(30, 30)
+            self.edit_btn.setToolTip("Edit category")
             self.edit_btn.clicked.connect(
                 lambda: self.edit_requested.emit(self._category.id))
             header.addWidget(self.edit_btn)
 
-            self.del_btn = QPushButton("🗑")
-            self.del_btn.setObjectName("secondary")
+            self.del_btn = QPushButton("✕")
+            self.del_btn.setObjectName("iconBtn")
+            self.del_btn.setProperty("class", "iconBtnDanger")
             self.del_btn.setCursor(Qt.PointingHandCursor)
-            self.del_btn.setFixedSize(28, 28)
+            self.del_btn.setFixedSize(30, 30)
+            self.del_btn.setToolTip("Delete category")
             self.del_btn.clicked.connect(
                 lambda: self.delete_requested.emit(self._category.id))
             header.addWidget(self.del_btn)

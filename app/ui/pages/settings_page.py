@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QHBoxLayout, QLabel, QRadioButton, QSpinBox, QVBoxLayout,
-    QComboBox,
+    QButtonGroup, QComboBox, QHBoxLayout, QLabel, QRadioButton,
+    QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app.core.i18n import i18n
@@ -44,12 +44,30 @@ class SettingsPage(BasePage):
         self._sync()
 
     def build_body(self, layout: QVBoxLayout) -> None:
-        layout.addWidget(self._build_mode_card())
-        layout.addWidget(self._build_scan_card())
-        layout.addWidget(self._build_notifications_card())
-        layout.addWidget(self._build_auto_card())
-        layout.addWidget(self._build_language_card())
-        layout.addWidget(self._build_updates_card())
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Remove the trailing addStretch the BasePage installed: cards must
+        # sit at the top of the scroll, otherwise the scroll viewport pushes
+        # them off-screen with the parent layout's stretch.
+        layout.addWidget(scroll, stretch=1)
+
+        inner = QWidget()
+        body = QVBoxLayout(inner)
+        body.setContentsMargins(0, 0, 6, 0)
+        body.setSpacing(14)
+        for builder in (
+            self._build_mode_card,
+            self._build_scan_card,
+            self._build_notifications_card,
+            self._build_auto_card,
+            self._build_language_card,
+            self._build_updates_card,
+        ):
+            body.addWidget(builder())
+        body.addStretch(1)
+        scroll.setWidget(inner)
 
     def _build_scan_card(self) -> Card:
         card = Card()

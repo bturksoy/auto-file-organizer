@@ -64,9 +64,10 @@ class ProfileCard(Card):
             row.addWidget(switch_btn)
 
         menu_btn = QPushButton("⋯")
-        menu_btn.setObjectName("secondary")
+        menu_btn.setObjectName("iconBtn")
         menu_btn.setFixedSize(34, 30)
         menu_btn.setCursor(Qt.PointingHandCursor)
+        menu_btn.setToolTip("Profile actions")
         menu_btn.clicked.connect(lambda: self._open_menu(menu_btn))
         row.addWidget(menu_btn)
 

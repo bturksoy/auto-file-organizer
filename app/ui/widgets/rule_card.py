@@ -70,10 +70,9 @@ class RuleCard(Card):
         header.setSpacing(10)
 
         handle = QLabel("≡")
-        handle.setStyleSheet(
-            "color: #6b7079; font-size: 18px; padding: 0 4px;"
-        )
+        handle.setObjectName("dragHandle")
         handle.setCursor(Qt.OpenHandCursor)
+        handle.setToolTip("Drag to reorder priority")
         handle.mousePressEvent = self._start_drag  # type: ignore[assignment]
         header.addWidget(handle)
 
@@ -94,17 +93,19 @@ class RuleCard(Card):
         header.addWidget(chip)
 
         edit_btn = QPushButton("✎")
-        edit_btn.setObjectName("secondary")
-        edit_btn.setFixedSize(28, 28)
+        edit_btn.setObjectName("iconBtn")
+        edit_btn.setFixedSize(30, 30)
         edit_btn.setCursor(Qt.PointingHandCursor)
+        edit_btn.setToolTip("Edit rule")
         edit_btn.clicked.connect(
             lambda: self.edit_requested.emit(self._rule.id))
         header.addWidget(edit_btn)
 
-        del_btn = QPushButton("🗑")
-        del_btn.setObjectName("secondary")
-        del_btn.setFixedSize(28, 28)
+        del_btn = QPushButton("✕")
+        del_btn.setObjectName("iconBtn")
+        del_btn.setFixedSize(30, 30)
         del_btn.setCursor(Qt.PointingHandCursor)
+        del_btn.setToolTip("Delete rule")
         del_btn.clicked.connect(
             lambda: self.delete_requested.emit(self._rule.id))
         header.addWidget(del_btn)

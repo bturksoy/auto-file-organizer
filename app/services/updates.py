@@ -9,7 +9,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 UPDATE_API_URL = (
     "https://api.github.com/repos/bturksoy/auto-file-organizer/releases/latest"
 )

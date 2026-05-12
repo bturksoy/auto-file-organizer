@@ -144,6 +144,47 @@ QPushButton#secondary:hover {{
     background-color: {BG_CARD};
 }}
 
+/* Small icon-style buttons (edit / delete / menu / drag handle).
+   The text is a unicode glyph so we just need decent contrast + hover. */
+QPushButton#iconBtn {{
+    background-color: transparent;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    color: {TEXT_DIM};
+    padding: 0px;
+    font-size: 14px;
+}}
+
+QPushButton#iconBtn:hover {{
+    background-color: {BG_CARD_HOVER};
+    color: {TEXT};
+    border-color: {TEXT_FAINT};
+}}
+
+QPushButton#iconBtnDanger:hover {{
+    color: {DANGER};
+    border-color: {DANGER};
+}}
+
+QLabel#dragHandle {{
+    color: {TEXT_FAINT};
+    font-size: 18px;
+    padding: 0 6px;
+}}
+
+QLabel#dragHandle:hover {{
+    color: {TEXT};
+}}
+
+QPushButton#primary:disabled {{
+    background-color: {BORDER};
+    color: {TEXT_FAINT};
+}}
+
+QFrame#card:hover {{
+    border-color: #3a3d46;
+}}
+
 /* ------- Cards ------- */
 QFrame#card {{
     background-color: {BG_CARD};

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from app.core.state import AppState
 from app.ui.dialogs.rule_edit import RuleEditDialog
 from app.ui.pages.base_page import BasePage, InfoBanner
+from app.ui.widgets.empty_state import EmptyState
 from app.ui.widgets.rule_card import RuleCard
 
 
@@ -53,6 +54,17 @@ class RulesPage(BasePage):
 
         profile = self._state.active_profile()
         if not profile:
+            return
+
+        if not profile.rules:
+            self._list_layout.addWidget(EmptyState(
+                icon="⚡",
+                title="No rules yet",
+                message="Click + New Rule to define one. Rules run before "
+                        "categories and can move, copy, or skip files based "
+                        "on name, extension, size, age, or path.",
+            ))
+            self._list_layout.addStretch(1)
             return
 
         def lookup(category_id: str) -> str:

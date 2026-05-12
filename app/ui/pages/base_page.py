@@ -53,7 +53,10 @@ class InfoBanner(QFrame):
 class BasePage(QWidget):
     """Vertical scroll-able page with a header row.
 
-    Subclasses override `build_body(layout)` and append their own widgets.
+    Subclasses override `build_body(layout)` and add their content. The
+    last widget they add SHOULD claim the remaining space (stretch=1) —
+    typically a QScrollArea or a content area. The page does not add a
+    trailing stretch on its own; the child decides where slack goes.
     """
 
     def __init__(self, title: str, subtitle: str = "",
@@ -69,8 +72,6 @@ class BasePage(QWidget):
 
         self._content_layout = layout
         self.build_body(layout)
-
-        layout.addStretch(1)
 
     def build_body(self, layout: QVBoxLayout) -> None:
         """Override in subclasses to add page-specific widgets."""

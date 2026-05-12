@@ -4,9 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from app.core.state import AppState
@@ -26,9 +27,33 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Auto File Organizer")
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
+        self.setAcceptDrops(True)
         self._build()
+        self._build_statusbar()
         self._state.folder_changed.connect(self._on_folder_changed)
+        self._state.active_profile_changed.connect(self._refresh_status)
+        self._state.profiles_changed.connect(self._refresh_status)
         self._on_folder_changed(self._state.current_folder)
+        self._refresh_status()
+
+    # ----- drag and drop a folder -----------------------------------------
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        for url in event.mimeData().urls():
+            local = url.toLocalFile()
+            if not local:
+                continue
+            target = Path(local)
+            if not target.is_dir():
+                target = target.parent
+            if target.is_dir():
+                self._state.set_folder(target)
+                event.acceptProposedAction()
+                return
 
     def _build(self) -> None:
         root = QWidget()
@@ -82,9 +107,40 @@ class MainWindow(QMainWindow):
         self.folder_button = QPushButton("\U0001F4C1  Pick folder…")
         self.folder_button.setObjectName("folderPicker")
         self.folder_button.setCursor(Qt.PointingHandCursor)
+        self.folder_button.setToolTip(
+            "Choose a folder to scan. You can also drag and drop one anywhere "
+            "in this window.")
         self.folder_button.clicked.connect(self._pick_folder)
         layout.addWidget(self.folder_button)
         return bar
+
+    def _build_statusbar(self) -> None:
+        bar = QStatusBar()
+        bar.setStyleSheet(
+            "QStatusBar { background: #15161a; color: #9ba0ab; "
+            "border-top: 1px solid #2c2e36; }"
+            " QStatusBar::item { border: none; }"
+        )
+        self._status_profile = QLabel("")
+        self._status_folder = QLabel("")
+        self._status_mode = QLabel("")
+        for lbl in (self._status_profile, self._status_mode,
+                    self._status_folder):
+            lbl.setStyleSheet("color: #9ba0ab; padding: 0 12px;")
+        bar.addWidget(self._status_profile)
+        bar.addWidget(self._status_mode)
+        bar.addPermanentWidget(self._status_folder)
+        self.setStatusBar(bar)
+
+    def _refresh_status(self) -> None:
+        profile = self._state.active_profile()
+        if profile:
+            self._status_profile.setText(f"Profile: {profile.name}")
+            mode = profile.settings.organization_mode.replace("_", " ")
+            self._status_mode.setText(f"Mode: {mode}")
+        else:
+            self._status_profile.setText("No profile")
+            self._status_mode.setText("")
 
     def _on_nav(self, key: str) -> None:
         page = self._pages.get(key)
@@ -99,8 +155,9 @@ class MainWindow(QMainWindow):
     def _on_folder_changed(self, folder: Path | None) -> None:
         if not folder:
             self.folder_button.setText("\U0001F4C1  Pick folder…")
+            self._status_folder.setText("No folder")
             return
         path_str = str(folder)
-        if len(path_str) > 48:
-            path_str = "…" + path_str[-46:]
-        self.folder_button.setText(f"\U0001F4C1  {path_str}")
+        display = "…" + path_str[-46:] if len(path_str) > 48 else path_str
+        self.folder_button.setText(f"\U0001F4C1  {display}")
+        self._status_folder.setText(path_str)
