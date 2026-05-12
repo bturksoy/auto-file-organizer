@@ -19,6 +19,16 @@ No installation, no setup, no dependencies — just one `.exe`.
   preference persists across sessions
 - **Auto-update on launch** — the app checks GitHub for newer releases on
   startup; when one is available a non-intrusive banner offers to install it
+- **Drag and drop** — drop a folder onto the window to select it
+- **Recent folders** — quick-pick from your last few organized locations
+- **Right-click to reclassify** — see a file in the wrong category? Right-click
+  it in the preview and pick the right one. Your override is honoured when
+  you Organize.
+- **Optional destination folder** — point everything at a single library
+  (e.g. `E:\Library`) and all sources funnel into one organized vault
+- **Background mode** — enable scheduled auto-organize and the app keeps a
+  tray icon, re-running on the folder you watch at your chosen interval
+- **Keyboard shortcuts** — Ctrl+P preview, Ctrl+O organize, Ctrl+Z undo, F5 refresh
 - **Smart Turkish handling** — folds dotless `ı → i`, strips combining marks
   (so `Kılavuz` matches `kilavuz`, `EHLİYET` matches `ehliyet`)
 - **Fuzzy match for broken PDFs** — when a PDF's font has missing Unicode mappings
@@ -163,9 +173,39 @@ These submissions help train the engines and reduce flags for future users.
 
 ### Settings
 
-Open **Settings → Preferences** to switch the interface language or toggle
-the startup update check. Choices are saved to
-`%APPDATA%\FileOrganizer\settings.json` and reused next time.
+Open **Settings → Preferences** to control:
+
+- **Language** — English / Türkçe (UI + folder names follow your choice)
+- **Check for updates on startup** — toggle the auto-update probe
+- **Destination folder** — when set, all categorized files are moved to
+  this single location instead of staying in the source folder. Categories
+  become subfolders here. Leave empty to keep the in-place behaviour.
+- **Background mode**
+  - Enable scheduled auto-organize
+  - Pick the folder to watch (e.g. your `Downloads`)
+  - Set the interval (minutes between passes)
+  - Start in tray when launched — useful for a "set and forget" workflow
+
+Choices are saved to `%APPDATA%\FileOrganizer\settings.json` and reused
+next launch.
+
+### Tray and background mode
+
+When background mode is enabled the app stops quitting on window close —
+it tucks into the system tray instead. Right-click the tray icon for:
+
+- **Show window**
+- **Organize now** — trigger an immediate pass
+- **Pause / Resume auto-organize**
+- **Quit**
+
+Each scheduled pass shows a Windows notification when files were moved.
+
+### Reclassifying files
+
+After running Preview, **right-click any file row** in the log to reassign
+it to a different category. The override sticks for the upcoming Organize.
+Switching folders or re-running Preview resets overrides.
 
 ### Updates
 

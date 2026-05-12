@@ -7,6 +7,7 @@ standalone Windows executable via PyInstaller --onefile.
 from __future__ import annotations
 
 import functools
+import io
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 import unicodedata
 import urllib.request
@@ -26,7 +28,7 @@ from pathlib import Path
 from tkinter import END, filedialog, messagebox, ttk
 
 APP_NAME = "File Organizer"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 UNDO_LOG_NAME = ".file-organizer-undo.json"
 BMC_URL = "https://buymeacoffee.com/bturksoy"
 UPDATE_API_URL = (
@@ -34,6 +36,8 @@ UPDATE_API_URL = (
 )
 UPDATE_HTTP_TIMEOUT = 8
 DEFAULT_LANG = "en"
+RECENT_FOLDERS_LIMIT = 8
+MIN_AUTO_INTERVAL_MIN = 1
 
 # pypdf is noisy about malformed streams. We don't want to crash on it.
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -115,6 +119,51 @@ UI_STRINGS = {
         ),
         "update_apply_failed": "Could not apply update:\n{err}",
         "update_download_failed": "Could not download update:\n{err}",
+        "open_in_explorer_btn": "Open",
+        "recent_folders_label": "Recent:",
+        "drop_hint": "Tip: you can drag and drop a folder onto this window.",
+        "stats_title": "Organize complete",
+        "stats_body": (
+            "{total} files moved into {cats} categories\n"
+            "Total size: {size}\n"
+            "Elapsed: {elapsed} s\n"
+            "Errors: {errors}"
+        ),
+        "stats_open_folder": "Open folder",
+        "stats_close": "Close",
+        "reclassify_menu": "Move to category...",
+        "reclassify_title": "Reassign file",
+        "reclassify_prompt": "Move '{name}' to which category?",
+        "settings_destination": "Destination folder (optional):",
+        "settings_destination_hint": (
+            "When set, organized files go here instead of staying in the "
+            "source folder. Leave empty to organize in place."
+        ),
+        "settings_destination_browse": "Browse...",
+        "settings_destination_clear": "Clear",
+        "settings_auto_section": "Background mode",
+        "settings_auto_enable": "Enable scheduled auto-organize",
+        "settings_auto_folder": "Folder to watch:",
+        "settings_auto_interval": "Interval (minutes):",
+        "settings_auto_start_minimized": "Start in tray when launched",
+        "settings_auto_hint": (
+            "When enabled, the app keeps a tray icon and re-organizes the "
+            "watched folder on a schedule. Closing the window minimizes to "
+            "tray instead of quitting."
+        ),
+        "tray_show": "Show window",
+        "tray_pause": "Pause auto-organize",
+        "tray_resume": "Resume auto-organize",
+        "tray_run_now": "Organize now",
+        "tray_quit": "Quit",
+        "tray_status_idle": "File Organizer — idle",
+        "tray_status_running": "File Organizer — organizing...",
+        "tray_status_paused": "File Organizer — paused",
+        "tray_notify_done": "Organized {n} file(s) in {folder}",
+        "auto_no_folder_set": (
+            "Auto-organize is enabled but no watched folder is set. "
+            "Open Settings to configure it."
+        ),
         "about_title": "About",
         "about_body": (
             "{app} v{ver}\n\nA standalone file organizer.\n"
@@ -210,6 +259,52 @@ UI_STRINGS = {
         ),
         "update_apply_failed": "Güncelleme uygulanamadı:\n{err}",
         "update_download_failed": "Güncelleme indirilemedi:\n{err}",
+        "open_in_explorer_btn": "Aç",
+        "recent_folders_label": "Son:",
+        "drop_hint": "İpucu: bir klasörü pencereye sürükleyip bırakabilirsin.",
+        "stats_title": "Düzenleme tamamlandı",
+        "stats_body": (
+            "{total} dosya, {cats} kategori\n"
+            "Toplam boyut: {size}\n"
+            "Süre: {elapsed} s\n"
+            "Hata: {errors}"
+        ),
+        "stats_open_folder": "Klasörü aç",
+        "stats_close": "Kapat",
+        "reclassify_menu": "Kategoriye taşı...",
+        "reclassify_title": "Dosyayı yeniden ata",
+        "reclassify_prompt": "'{name}' hangi kategoriye gitsin?",
+        "settings_destination": "Hedef klasör (opsiyonel):",
+        "settings_destination_hint": (
+            "Belirtilirse düzenlenen dosyalar buraya taşınır, kaynak "
+            "klasörde kalmaz. Boş bırakılırsa kaynak klasörün altında "
+            "düzenlenir."
+        ),
+        "settings_destination_browse": "Gözat...",
+        "settings_destination_clear": "Temizle",
+        "settings_auto_section": "Arka plan modu",
+        "settings_auto_enable": "Zamanlanmış otomatik düzenlemeyi etkinleştir",
+        "settings_auto_folder": "Takip edilecek klasör:",
+        "settings_auto_interval": "Aralık (dakika):",
+        "settings_auto_start_minimized": "Açılışta tepside başlat",
+        "settings_auto_hint": (
+            "Etkinleştirildiğinde uygulama tepside (system tray) kalır ve "
+            "takip edilen klasörü belirtilen aralıkla yeniden düzenler. "
+            "Pencere kapatılınca çıkmaz, tepsiye iner."
+        ),
+        "tray_show": "Pencereyi göster",
+        "tray_pause": "Otomatik düzenlemeyi duraklat",
+        "tray_resume": "Otomatik düzenlemeyi sürdür",
+        "tray_run_now": "Şimdi düzenle",
+        "tray_quit": "Çıkış",
+        "tray_status_idle": "Dosya Düzenleyici — boşta",
+        "tray_status_running": "Dosya Düzenleyici — düzenleniyor...",
+        "tray_status_paused": "Dosya Düzenleyici — duraklatıldı",
+        "tray_notify_done": "{folder} klasöründe {n} dosya düzenlendi",
+        "auto_no_folder_set": (
+            "Otomatik düzenleme etkin ama takip edilecek klasör atanmamış. "
+            "Ayarlardan yapılandır."
+        ),
         "about_title": "Hakkında",
         "about_body": (
             "{app} v{ver}\n\nBağımsız bir dosya düzenleyici.\n"
@@ -894,15 +989,19 @@ def classify(path: Path, inspect_content: bool = True) -> str:
     return classify_detailed(path, inspect_content)[0]
 
 
-def plan_moves(root: Path, progress_cb=None, with_reason: bool = False
-               ) -> list:
+def plan_moves(root: Path, progress_cb=None, with_reason: bool = False,
+               destination: Path | None = None) -> list:
     """Walk `root` (top level only) and produce a move plan.
 
     Returns a list of tuples. Each tuple is (src, dst, category_key) or
-    (src, dst, category_key, reason) when with_reason is True. `dst` is
-    computed using the active locale.
+    (src, dst, category_key, reason) when with_reason is True.
+
+    If `destination` is given, every file targets `destination/<Category>/...`
+    instead of `root/<Category>/...`. Useful for a centralized library
+    workflow where many source folders feed a single organized vault.
     """
     skip_dirs = all_known_category_names()
+    target_base = destination if destination else root
 
     entries = []
     for entry in root.iterdir():
@@ -922,7 +1021,7 @@ def plan_moves(root: Path, progress_cb=None, with_reason: bool = False
         if progress_cb:
             progress_cb(i, total, entry.name)
         key, reason = classify_detailed(entry)
-        dst = root / category_display(key) / entry.name
+        dst = target_base / category_display(key) / entry.name
         if with_reason:
             moves.append((entry, dst, key, reason))
         else:
@@ -948,7 +1047,7 @@ def resolve_conflict(dst: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 class SettingsDialog(tk.Toplevel):
-    """Modal preferences dialog: language + update behaviour."""
+    """Modal preferences dialog: language, updates, destination, scheduler."""
 
     def __init__(self, master: tk.Misc, settings: dict,
                  on_language_change, on_save) -> None:
@@ -962,39 +1061,137 @@ class SettingsDialog(tk.Toplevel):
 
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
+        row = 0
 
+        # --- Language -------------------------------------------------------
         ttk.Label(frame, text=i18n.t("settings_language")).grid(
-            row=0, column=0, sticky="w", padx=(0, 10), pady=4)
-
+            row=row, column=0, sticky="w", padx=(0, 10), pady=4)
         self._lang_var = tk.StringVar(value=LANGUAGES[self._current_lang])
         ttk.Combobox(
             frame, state="readonly",
             values=list(LANGUAGES.values()),
             textvariable=self._lang_var,
-            width=20,
-        ).grid(row=0, column=1, sticky="w", pady=4)
+            width=22,
+        ).grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        row += 1
 
+        # --- Update check ---------------------------------------------------
         self._check_updates_var = tk.BooleanVar(
             value=settings.get("check_updates_on_startup", True))
         ttk.Checkbutton(
             frame, text=i18n.t("settings_check_updates"),
             variable=self._check_updates_var,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(10, 4))
+        row += 1
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+        row += 1
+
+        # --- Destination folder --------------------------------------------
+        ttk.Label(frame, text=i18n.t("settings_destination")).grid(
+            row=row, column=0, columnspan=3, sticky="w")
+        row += 1
+        self._dest_var = tk.StringVar(
+            value=settings.get("destination_folder", ""))
+        ttk.Entry(frame, textvariable=self._dest_var, width=42).grid(
+            row=row, column=0, columnspan=2, sticky="we", pady=4)
+        ttk.Button(
+            frame, text=i18n.t("settings_destination_browse"),
+            command=self._pick_destination,
+        ).grid(row=row, column=2, sticky="w", padx=(6, 0))
+        row += 1
+        ttk.Button(
+            frame, text=i18n.t("settings_destination_clear"),
+            command=lambda: self._dest_var.set(""),
+        ).grid(row=row, column=0, sticky="w", pady=(0, 4))
+        row += 1
+        ttk.Label(frame, text=i18n.t("settings_destination_hint"),
+                  foreground="#666", wraplength=420, justify="left").grid(
+            row=row, column=0, columnspan=3, sticky="w", pady=(2, 8))
+        row += 1
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=row, column=0, columnspan=3, sticky="ew", pady=(4, 8))
+        row += 1
+
+        # --- Background / auto-organize ------------------------------------
+        ttk.Label(frame, text=i18n.t("settings_auto_section"),
+                  font=("Segoe UI", 10, "bold")).grid(
+            row=row, column=0, columnspan=3, sticky="w")
+        row += 1
+        self._auto_var = tk.BooleanVar(
+            value=settings.get("auto_organize", False))
+        ttk.Checkbutton(
+            frame, text=i18n.t("settings_auto_enable"),
+            variable=self._auto_var,
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(2, 4))
+        row += 1
+
+        ttk.Label(frame, text=i18n.t("settings_auto_folder")).grid(
+            row=row, column=0, sticky="w", padx=(0, 8))
+        self._auto_folder_var = tk.StringVar(
+            value=settings.get("auto_organize_folder", ""))
+        ttk.Entry(
+            frame, textvariable=self._auto_folder_var, width=32,
+        ).grid(row=row, column=1, sticky="we", pady=2)
+        ttk.Button(
+            frame, text=i18n.t("settings_destination_browse"),
+            command=self._pick_auto_folder,
+        ).grid(row=row, column=2, sticky="w", padx=(6, 0))
+        row += 1
+
+        ttk.Label(frame, text=i18n.t("settings_auto_interval")).grid(
+            row=row, column=0, sticky="w", padx=(0, 8))
+        self._auto_interval_var = tk.IntVar(
+            value=int(settings.get("auto_organize_interval_minutes", 30)))
+        ttk.Spinbox(
+            frame, from_=MIN_AUTO_INTERVAL_MIN, to=1440,
+            textvariable=self._auto_interval_var, width=8,
+        ).grid(row=row, column=1, sticky="w", pady=2)
+        row += 1
+
+        self._start_minimized_var = tk.BooleanVar(
+            value=settings.get("start_in_tray", False))
+        ttk.Checkbutton(
+            frame, text=i18n.t("settings_auto_start_minimized"),
+            variable=self._start_minimized_var,
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(4, 4))
+        row += 1
+
+        ttk.Label(frame, text=i18n.t("settings_auto_hint"),
+                  foreground="#666", wraplength=420, justify="left").grid(
+            row=row, column=0, columnspan=3, sticky="w", pady=(2, 8))
+        row += 1
 
         ttk.Label(frame, text=i18n.t("settings_restart_note"),
                   foreground="#666").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            row=row, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        row += 1
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        btn_row.grid(row=row, column=0, columnspan=3, sticky="e",
+                     pady=(16, 0))
         ttk.Button(btn_row, text=i18n.t("settings_cancel"),
                    command=self.destroy).pack(side="right", padx=(8, 0))
         ttk.Button(btn_row, text=i18n.t("settings_save"),
                    command=self._save).pack(side="right")
 
+        frame.columnconfigure(1, weight=1)
+
         self.grab_set()
         self.wait_visibility()
         self.focus_set()
+
+    def _pick_destination(self) -> None:
+        folder = filedialog.askdirectory()
+        if folder:
+            self._dest_var.set(folder)
+
+    def _pick_auto_folder(self) -> None:
+        folder = filedialog.askdirectory()
+        if folder:
+            self._auto_folder_var.set(folder)
 
     def _save(self) -> None:
         chosen_label = self._lang_var.get()
@@ -1002,9 +1199,20 @@ class SettingsDialog(tk.Toplevel):
             (c for c, label in LANGUAGES.items() if label == chosen_label),
             self._current_lang,
         )
+        try:
+            interval = max(MIN_AUTO_INTERVAL_MIN,
+                           int(self._auto_interval_var.get()))
+        except (TypeError, ValueError):
+            interval = 30
         self._on_save({
             "language": code,
             "check_updates_on_startup": self._check_updates_var.get(),
+            "destination_folder": self._dest_var.get().strip().strip('"'),
+            "auto_organize": self._auto_var.get(),
+            "auto_organize_folder":
+                self._auto_folder_var.get().strip().strip('"'),
+            "auto_organize_interval_minutes": interval,
+            "start_in_tray": self._start_minimized_var.get(),
         })
         if code != self._current_lang:
             self._on_language_change(code)
@@ -1027,9 +1235,25 @@ class OrganizerApp:
         # Reactive widget text — updated when language changes.
         self._labels: dict[str, tk.StringVar] = {}
 
+        # Preview plan kept on the instance so right-click can modify it and
+        # later organize uses the (possibly modified) plan.
+        self._current_plan: list[dict] | None = None
+
+        # Background / tray state. Only activated when auto-organize is on.
+        self._tray = None
+        self._tray_thread: threading.Thread | None = None
+        self._scheduler_stop = threading.Event()
+        self._scheduler_pause = threading.Event()
+        self._scheduler_thread: threading.Thread | None = None
+        self._minimize_to_tray = False  # set when auto-organize is on
+
         self._build_menu()
         self._build_ui()
         self._apply_language()
+        self._bind_shortcuts()
+        self._wire_drag_drop()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close_window)
+
         self.root.after(100, self._drain_queue)
 
         # Auto-check for updates on launch (background thread, opt-out via
@@ -1038,6 +1262,12 @@ class OrganizerApp:
         if (self.settings.get("check_updates_on_startup", True)
                 and is_running_frozen()):
             self.root.after(800, lambda: self._spawn_update_check(silent=True))
+
+        # Start background mode if configured.
+        if self.settings.get("auto_organize", False):
+            self._start_background_services()
+            if self.settings.get("start_in_tray", False):
+                self.root.after(300, self._hide_to_tray)
 
     # ------- UI construction ------------------------------------------------
 
@@ -1106,12 +1336,31 @@ class OrganizerApp:
         top = self._top_frame
         ttk.Label(top, textvariable=self._label_var("folder_label")).pack(
             side="left")
-        ttk.Entry(top, textvariable=self.folder_var).pack(
+        self._folder_entry = ttk.Entry(top, textvariable=self.folder_var)
+        self._folder_entry.pack(
             side="left", fill="x", expand=True, padx=(6, 6))
         self.browse_btn = ttk.Button(
             top, textvariable=self._label_var("browse_btn"),
             command=self._browse)
         self.browse_btn.pack(side="left")
+        self._open_explorer_btn = ttk.Button(
+            top, textvariable=self._label_var("open_in_explorer_btn"),
+            command=self._open_in_explorer)
+        self._open_explorer_btn.pack(side="left", padx=(6, 0))
+
+        # Recent folders row — populated from settings.
+        recent_row = ttk.Frame(self.root)
+        recent_row.pack(fill="x", padx=10, pady=(0, 4))
+        ttk.Label(recent_row,
+                  textvariable=self._label_var("recent_folders_label")).pack(
+            side="left")
+        self.recent_var = tk.StringVar()
+        self.recent_combo = ttk.Combobox(
+            recent_row, state="readonly", textvariable=self.recent_var,
+            values=self.settings.get("recent_folders", []),
+        )
+        self.recent_combo.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self.recent_combo.bind("<<ComboboxSelected>>", self._on_recent_picked)
 
         actions = ttk.Frame(self.root)
         actions.pack(fill="x", **pad)
@@ -1155,6 +1404,8 @@ class OrganizerApp:
         xscroll.grid(row=1, column=0, sticky="ew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
+        # Right-click on preview lines to reclassify a file.
+        self.log.bind("<Button-3>", self._on_preview_right_click)
 
         footer = ttk.Frame(self.root)
         footer.pack(fill="x", padx=10, pady=(0, 8))
@@ -1190,8 +1441,211 @@ class OrganizerApp:
         )
 
     def _save_settings_dict(self, updates: dict) -> None:
+        was_auto = self.settings.get("auto_organize", False)
         self.settings.update(updates)
         save_settings(self.settings)
+        now_auto = self.settings.get("auto_organize", False)
+        if now_auto and not was_auto:
+            self._start_background_services()
+        elif was_auto and not now_auto:
+            self._stop_background_services()
+
+    # ------- Stats dialog ---------------------------------------------------
+
+    def _show_stats_dialog(self, stats: dict) -> None:
+        size_str = self._human_bytes(stats.get("bytes", 0))
+        body = i18n.t(
+            "stats_body",
+            total=stats["total"], cats=stats["cats"],
+            size=size_str,
+            elapsed=f"{stats['elapsed']:.1f}",
+            errors=stats["errors"],
+        )
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title(i18n.t("stats_title"))
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+
+        frame = ttk.Frame(dlg, padding=18)
+        frame.pack()
+        ttk.Label(frame, text=i18n.t("stats_title"),
+                  font=("Segoe UI", 11, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=body, justify="left").pack(
+            anchor="w", pady=(8, 12))
+
+        btn_row = ttk.Frame(frame)
+        btn_row.pack(anchor="e")
+        folder = stats.get("folder") or ""
+        if folder:
+            ttk.Button(
+                btn_row, text=i18n.t("stats_open_folder"),
+                command=lambda: (os.startfile(folder), dlg.destroy()),
+            ).pack(side="right", padx=(8, 0))
+        ttk.Button(btn_row, text=i18n.t("stats_close"),
+                   command=dlg.destroy).pack(side="right")
+
+        dlg.grab_set()
+        dlg.focus_set()
+
+    @staticmethod
+    def _human_bytes(n: int) -> str:
+        size = float(n)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if size < 1024:
+                return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    # ------- Background services (tray + scheduler) ------------------------
+
+    def _start_background_services(self) -> None:
+        self._minimize_to_tray = True
+        self._scheduler_stop.clear()
+        self._scheduler_pause.clear()
+        if not self._scheduler_thread or not self._scheduler_thread.is_alive():
+            self._scheduler_thread = threading.Thread(
+                target=self._scheduler_loop, daemon=True)
+            self._scheduler_thread.start()
+        self._ensure_tray_running()
+
+    def _stop_background_services(self) -> None:
+        self._minimize_to_tray = False
+        self._scheduler_stop.set()
+        self._stop_tray()
+
+    def _scheduler_loop(self) -> None:
+        """Periodically run organize on the watched folder."""
+        # Run once shortly after activation so the user sees activity.
+        first_delay = 5
+        for _ in range(first_delay):
+            if self._scheduler_stop.is_set():
+                return
+            time.sleep(1)
+
+        while not self._scheduler_stop.is_set():
+            interval_min = max(
+                MIN_AUTO_INTERVAL_MIN,
+                int(self.settings.get("auto_organize_interval_minutes", 30)),
+            )
+            if not self._scheduler_pause.is_set():
+                self._run_scheduled_pass()
+            # Sleep in 1s slices so we react to stop/pause quickly.
+            for _ in range(interval_min * 60):
+                if self._scheduler_stop.is_set():
+                    return
+                time.sleep(1)
+
+    def _run_scheduled_pass(self) -> None:
+        folder = self.settings.get("auto_organize_folder", "").strip()
+        if not folder:
+            self.msg_queue.put(("log", i18n.t("auto_no_folder_set")))
+            return
+        root = Path(folder)
+        if not root.is_dir():
+            return
+        self._update_tray_status("running")
+        try:
+            self._organize_worker(root, silent=True)
+            # Notify count via msg_queue → drained on main thread.
+            self.msg_queue.put(("tray_notify_done", root))
+        finally:
+            self._update_tray_status("idle")
+
+    # ----- Tray icon plumbing ------------------------------------------------
+
+    def _ensure_tray_running(self) -> None:
+        if self._tray is not None:
+            return
+        try:
+            import pystray
+            from PIL import Image, ImageDraw
+        except Exception:
+            return  # tray libs missing — silently skip
+
+        icon_image = self._make_tray_icon(Image, ImageDraw)
+        menu = pystray.Menu(
+            pystray.MenuItem(
+                i18n.t("tray_show"), self._tray_show, default=True),
+            pystray.MenuItem(
+                i18n.t("tray_run_now"), self._tray_run_now),
+            pystray.MenuItem(
+                lambda _: (i18n.t("tray_resume") if
+                           self._scheduler_pause.is_set()
+                           else i18n.t("tray_pause")),
+                self._tray_toggle_pause),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(i18n.t("tray_quit"), self._tray_quit),
+        )
+        self._tray = pystray.Icon(
+            "file-organizer", icon_image, APP_NAME, menu)
+        self._tray_thread = threading.Thread(
+            target=self._tray.run, daemon=True)
+        self._tray_thread.start()
+
+    @staticmethod
+    def _make_tray_icon(image_mod, draw_mod):
+        """Render a simple 64x64 'FO' icon for the tray."""
+        img = image_mod.new("RGB", (64, 64), color=(31, 111, 235))
+        draw = draw_mod.Draw(img)
+        draw.rectangle((8, 16, 56, 48), fill=(255, 255, 255))
+        draw.rectangle((8, 16, 56, 22), fill=(31, 111, 235))
+        return img
+
+    def _update_tray_status(self, state: str) -> None:
+        if not self._tray:
+            return
+        key = {
+            "running": "tray_status_running",
+            "paused": "tray_status_paused",
+        }.get(state, "tray_status_idle")
+        try:
+            self._tray.title = i18n.t(key)
+        except Exception:
+            pass
+
+    def _stop_tray(self) -> None:
+        if self._tray:
+            try:
+                self._tray.stop()
+            except Exception:
+                pass
+            self._tray = None
+
+    def _hide_to_tray(self) -> None:
+        self._ensure_tray_running()
+        try:
+            self.root.withdraw()
+        except tk.TclError:
+            pass
+
+    def _tray_show(self, _icon=None, _item=None) -> None:
+        self.root.after(0, self._show_window_from_tray)
+
+    def _show_window_from_tray(self) -> None:
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+        except tk.TclError:
+            pass
+
+    def _tray_run_now(self, _icon=None, _item=None) -> None:
+        threading.Thread(
+            target=self._run_scheduled_pass, daemon=True).start()
+
+    def _tray_toggle_pause(self, _icon=None, _item=None) -> None:
+        if self._scheduler_pause.is_set():
+            self._scheduler_pause.clear()
+            self._update_tray_status("idle")
+        else:
+            self._scheduler_pause.set()
+            self._update_tray_status("paused")
+
+    def _tray_quit(self, _icon=None, _item=None) -> None:
+        self._scheduler_stop.set()
+        self._stop_tray()
+        self.root.after(0, self.root.destroy)
 
     def _change_language(self, code: str) -> None:
         i18n.set_language(code)
@@ -1291,6 +1745,73 @@ class OrganizerApp:
         folder = filedialog.askdirectory()
         if folder:
             self.folder_var.set(folder)
+            self._remember_recent(folder)
+
+    def _open_in_explorer(self) -> None:
+        path = self.folder_var.get().strip().strip('"')
+        if not path:
+            return
+        try:
+            os.startfile(path)
+        except OSError:
+            messagebox.showerror(
+                i18n.t("app_title"),
+                i18n.t("folder_not_found", path=path),
+            )
+
+    def _on_recent_picked(self, _event=None) -> None:
+        chosen = self.recent_var.get()
+        if chosen:
+            self.folder_var.set(chosen)
+
+    def _remember_recent(self, folder: str) -> None:
+        """Push a folder to the top of the recent list (capped, deduped)."""
+        recents = list(self.settings.get("recent_folders", []))
+        if folder in recents:
+            recents.remove(folder)
+        recents.insert(0, folder)
+        recents = recents[:RECENT_FOLDERS_LIMIT]
+        self.settings["recent_folders"] = recents
+        save_settings(self.settings)
+        self.recent_combo.config(values=recents)
+
+    def _bind_shortcuts(self) -> None:
+        self.root.bind("<Control-p>", lambda _e: self._preview())
+        self.root.bind("<Control-P>", lambda _e: self._preview())
+        self.root.bind("<Control-o>", lambda _e: self._organize())
+        self.root.bind("<Control-O>", lambda _e: self._organize())
+        self.root.bind("<Control-z>", lambda _e: self._undo())
+        self.root.bind("<Control-Z>", lambda _e: self._undo())
+        self.root.bind("<F5>", lambda _e: self._preview())
+
+    def _wire_drag_drop(self) -> None:
+        """Accept folder drops on the main window if tkinterdnd2 is loaded."""
+        try:
+            from tkinterdnd2 import DND_FILES
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self._on_drop)
+        except Exception:
+            # Not running under a TkinterDnD root, or module missing — skip.
+            pass
+
+    def _on_drop(self, event) -> None:
+        raw = event.data or ""
+        # Tk wraps paths with spaces in {curly braces}.
+        path = raw.strip().strip("{}").split("} {")[0].strip("{}")
+        if not path:
+            return
+        p = Path(path)
+        # If a file was dropped, use its parent folder.
+        target = p if p.is_dir() else p.parent
+        self.folder_var.set(str(target))
+        self._remember_recent(str(target))
+
+    def _on_close_window(self) -> None:
+        """When auto-organize is on, X button hides to tray instead of quit."""
+        if self._minimize_to_tray:
+            self._hide_to_tray()
+        else:
+            self.root.destroy()
 
     def _log_line(self, msg: str) -> None:
         self.log.insert(END, msg + "\n")
@@ -1324,6 +1845,8 @@ class OrganizerApp:
         root = self._resolve_root()
         if not root:
             return
+        self._remember_recent(str(root))
+        self._current_plan = None
         self._clear_log()
         self._log_line(i18n.t("preview_header", path=root))
         self._log_line(i18n.t("preview_scanning"))
@@ -1343,38 +1866,65 @@ class OrganizerApp:
                 i18n.t("scanning_progress", i=i, total=total, name=name),
             ))
         try:
-            moves = plan_moves(root, progress_cb=progress, with_reason=True)
+            destination = self._destination_path()
+            moves = plan_moves(
+                root,
+                progress_cb=progress,
+                with_reason=True,
+                destination=destination,
+            )
             if not moves:
                 self.msg_queue.put(("log", i18n.t("no_files")))
                 self.msg_queue.put(("done", i18n.t("empty_done")))
                 return
 
-            grouped: dict[str, list[tuple[str, str]]] = {}
-            for src, _dst, key, reason in moves:
-                label = category_display(key)
-                grouped.setdefault(label, []).append((src.name, reason))
-
-            for label in sorted(grouped):
-                self.msg_queue.put((
-                    "log", f"[{label}]  ({len(grouped[label])})"))
-                for name, reason in sorted(grouped[label]):
-                    line = f"  - {name}    [{reason}]" if verbose \
-                        else f"  - {name}"
-                    self.msg_queue.put(("log", line))
-                self.msg_queue.put(("log", ""))
-
-            self.msg_queue.put((
-                "log",
-                i18n.t("preview_summary", total=len(moves),
-                       cats=len(grouped)),
-            ))
-            if not verbose:
-                self.msg_queue.put(("log", i18n.t("verbose_hint")))
-            self.msg_queue.put((
-                "done", i18n.t("preview_done", n=len(moves))))
+            plan = [
+                {"src": src, "dst": dst, "key": key, "reason": reason}
+                for src, dst, key, reason in moves
+            ]
+            self.msg_queue.put(("plan_ready", (plan, root, verbose)))
         except Exception as e:
             self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
             self.msg_queue.put(("done", i18n.t("error_done")))
+
+    def _destination_path(self) -> Path | None:
+        dest = self.settings.get("destination_folder", "").strip()
+        if not dest:
+            return None
+        p = Path(dest)
+        if p.is_dir():
+            return p
+        # Try to create it if the user explicitly configured a missing path.
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            return p
+        except OSError:
+            return None
+
+    def _render_plan(self, plan: list[dict], verbose: bool) -> None:
+        """Repaint the log area from the current plan."""
+        self._clear_log()
+        grouped: dict[str, list[dict]] = {}
+        for entry in plan:
+            label = category_display(entry["key"])
+            grouped.setdefault(label, []).append(entry)
+
+        for label in sorted(grouped):
+            entries = sorted(grouped[label], key=lambda e: e["src"].name)
+            self._log_line(f"[{label}]  ({len(entries)})")
+            for entry in entries:
+                if verbose:
+                    self._log_line(
+                        f"  - {entry['src'].name}    [{entry['reason']}]")
+                else:
+                    self._log_line(f"  - {entry['src'].name}")
+            self._log_line("")
+
+        self._log_line(
+            i18n.t("preview_summary", total=len(plan), cats=len(grouped)))
+        if not verbose:
+            self._log_line(i18n.t("verbose_hint"))
+        self._log_line(i18n.t("drop_hint"))
 
     # ------- Organize -------------------------------------------------------
 
@@ -1387,26 +1937,48 @@ class OrganizerApp:
             i18n.t("confirm_organize", path=root),
         ):
             return
+        self._remember_recent(str(root))
         self._set_busy(True)
         threading.Thread(
             target=self._organize_worker, args=(root,), daemon=True,
         ).start()
 
-    def _organize_worker(self, root: Path) -> None:
+    def _organize_worker(self, root: Path,
+                         silent: bool = False) -> None:
         try:
-            moves = plan_moves(root)
-            self.msg_queue.put(("log", i18n.t("organize_header", path=root)))
+            # Prefer the previewed plan (so user reclassifications are honoured).
+            if self._current_plan:
+                moves = [
+                    (e["src"], e["dst"], e["key"])
+                    for e in self._current_plan
+                ]
+            else:
+                destination = self._destination_path()
+                moves = plan_moves(root, destination=destination)
+
+            if not silent:
+                self.msg_queue.put((
+                    "log", i18n.t("organize_header", path=root)))
             if not moves:
-                self.msg_queue.put(("log", i18n.t("no_files")))
-                self.msg_queue.put(("done", i18n.t("empty_done")))
+                if not silent:
+                    self.msg_queue.put(("log", i18n.t("no_files")))
+                    self.msg_queue.put(("done", i18n.t("empty_done")))
                 return
             self.msg_queue.put(("progress_max", len(moves)))
 
             undo_records = []
             errors = 0
+            total_bytes = 0
             timestamp = datetime.now().isoformat(timespec="seconds")
+            started = time.monotonic()
+
+            per_category: dict[str, int] = {}
 
             for i, (src, dst, key) in enumerate(moves, 1):
+                try:
+                    size = src.stat().st_size
+                except OSError:
+                    size = 0
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     final = resolve_conflict(dst)
@@ -1414,32 +1986,49 @@ class OrganizerApp:
                     undo_records.append({
                         "from": str(final), "to": str(src),
                     })
-                    self.msg_queue.put((
-                        "log",
-                        f"[{category_display(key)}] {src.name}",
-                    ))
+                    total_bytes += size
+                    per_category[key] = per_category.get(key, 0) + 1
+                    if not silent:
+                        self.msg_queue.put((
+                            "log",
+                            f"[{category_display(key)}] {src.name}",
+                        ))
                 except Exception as e:
                     errors += 1
-                    self.msg_queue.put((
-                        "log",
-                        f"{i18n.t('error_label')}: {src.name} -> {e}",
-                    ))
+                    if not silent:
+                        self.msg_queue.put((
+                            "log",
+                            f"{i18n.t('error_label')}: {src.name} -> {e}",
+                        ))
                 self.msg_queue.put(("progress", i))
 
+            elapsed = time.monotonic() - started
             self._append_undo(root, timestamp, undo_records)
-            self.msg_queue.put((
-                "log",
-                i18n.t("organize_done_log",
-                       moved=len(undo_records), errors=errors),
-            ))
-            self.msg_queue.put((
-                "done",
-                i18n.t("organize_done_status",
-                       moved=len(undo_records), errors=errors),
-            ))
+            self._current_plan = None  # reset after applying
+
+            if not silent:
+                self.msg_queue.put((
+                    "log",
+                    i18n.t("organize_done_log",
+                           moved=len(undo_records), errors=errors),
+                ))
+                self.msg_queue.put((
+                    "done",
+                    i18n.t("organize_done_status",
+                           moved=len(undo_records), errors=errors),
+                ))
+                self.msg_queue.put(("stats", {
+                    "folder": str(root),
+                    "total": len(undo_records),
+                    "cats": len(per_category),
+                    "bytes": total_bytes,
+                    "elapsed": elapsed,
+                    "errors": errors,
+                }))
         except Exception as e:
-            self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
-            self.msg_queue.put(("done", i18n.t("error_done")))
+            if not silent:
+                self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
+                self.msg_queue.put(("done", i18n.t("error_done")))
 
     def _append_undo(self, root: Path, timestamp: str,
                      records: list[dict]) -> None:
@@ -1601,9 +2190,70 @@ class OrganizerApp:
                         i18n.t("app_title"),
                         i18n.t("update_apply_failed", err=payload),
                     )
+                elif kind == "plan_ready":
+                    plan, _root, verbose = payload
+                    self._current_plan = plan
+                    self._current_verbose = verbose
+                    self._render_plan(plan, verbose)
+                    self.status_var.set(
+                        i18n.t("preview_done", n=len(plan)))
+                    self._set_busy(False)
+                elif kind == "stats":
+                    self._show_stats_dialog(payload)
+                elif kind == "tray_notify_done":
+                    folder = payload
+                    msg = i18n.t("tray_notify_done", n="?", folder=folder)
+                    if self._tray:
+                        try:
+                            self._tray.notify(msg, APP_NAME)
+                        except Exception:
+                            pass
         except queue.Empty:
             pass
         self.root.after(100, self._drain_queue)
+
+    # ------- Manual reclassification ----------------------------------------
+
+    def _on_preview_right_click(self, event) -> None:
+        """Show a category-picker menu when a file line is right-clicked."""
+        if not self._current_plan:
+            return
+        index = self.log.index(f"@{event.x},{event.y}")
+        line_text = self.log.get(f"{index} linestart", f"{index} lineend")
+        match = re.match(r"^\s*-\s+(.+?)(?:\s{2,}\[.*\])?$", line_text)
+        if not match:
+            return
+        name = match.group(1).strip()
+        entry = next(
+            (e for e in self._current_plan if e["src"].name == name), None)
+        if not entry:
+            return
+
+        menu = tk.Menu(self.root, tearoff=0)
+        # Sorted display names with key payload so we can update entry["key"].
+        active_lang = i18n.lang
+        keys_sorted = sorted(
+            CATEGORY_NAMES[active_lang].keys(),
+            key=lambda k: category_display(k),
+        )
+        for key in keys_sorted:
+            label = category_display(key)
+            current_marker = "  ◉" if key == entry["key"] else "   "
+            menu.add_command(
+                label=f"{current_marker} {label}",
+                command=lambda k=key: self._reassign(entry, k),
+            )
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _reassign(self, entry: dict, new_key: str) -> None:
+        if new_key == entry["key"]:
+            return
+        entry["key"] = new_key
+        entry["reason"] = "user override"
+        # Recompute destination path with the new category.
+        base = (self._destination_path() or entry["src"].parent)
+        entry["dst"] = base / category_display(new_key) / entry["src"].name
+        self._render_plan(self._current_plan, self._current_verbose)
 
 
 # ---------------------------------------------------------------------------
@@ -1612,7 +2262,13 @@ class OrganizerApp:
 
 def main() -> None:
     settings = load_settings()
-    root = tk.Tk()
+    # Prefer the TkinterDnD root so drag-and-drop works; fall back to plain Tk
+    # if the library is unavailable for any reason.
+    try:
+        from tkinterdnd2 import TkinterDnD
+        root = TkinterDnD.Tk()
+    except Exception:
+        root = tk.Tk()
     try:
         style = ttk.Style()
         if "vista" in style.theme_names():

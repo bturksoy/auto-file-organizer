@@ -7,7 +7,11 @@ Write-Host "Installing dependencies..." -ForegroundColor Cyan
 py -m pip install --user --upgrade -r requirements.txt
 
 Write-Host "Building exe..." -ForegroundColor Cyan
-py -m PyInstaller --onefile --windowed --name FileOrganizer --noconfirm organizer.py
+py -m PyInstaller --onefile --windowed --name FileOrganizer --noconfirm `
+    --collect-all tkinterdnd2 `
+    --collect-all pystray `
+    --collect-all PIL `
+    organizer.py
 
 if (Test-Path dist\FileOrganizer.exe) {
     $size = (Get-Item dist\FileOrganizer.exe).Length / 1MB
