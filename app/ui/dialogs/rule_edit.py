@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 
 from app.core.classifier import _file_meta, _rule_matches
 from app.core.models import (
-    ACTION_TYPES, CONDITION_TYPES, Action, Category, Condition, Rule,
+    ACTION_TYPES, CONDITION_TYPES, Action, Category, Condition,
+    ConditionGroup, Profile, Rule,
 )
 
 
@@ -36,6 +37,9 @@ _CONDITION_HELP = {
     "size_below_mb": "10",
     "age_above_days": "30  (older than)",
     "age_below_days": "30  (newer than)",
+    "modified_after": "2024-01-01",
+    "modified_before": "2024-12-31",
+    "content_matches": "Pick a pattern from Content tab",
 }
 
 _CONDITION_LABELS = {
@@ -51,6 +55,9 @@ _CONDITION_LABELS = {
     "size_below_mb": "Size below (MB)",
     "age_above_days": "Age above (days)",
     "age_below_days": "Age below (days)",
+    "modified_after": "Modified after (YYYY-MM-DD)",
+    "modified_before": "Modified before (YYYY-MM-DD)",
+    "content_matches": "Content matches pattern",
 }
 
 _ACTION_LABELS = {
@@ -63,8 +70,10 @@ _ACTION_LABELS = {
 
 
 class _ConditionRow(QWidget):
-    def __init__(self, condition: Condition | None = None, parent=None) -> None:
+    def __init__(self, condition: Condition | None = None,
+                 profile: Profile | None = None, parent=None) -> None:
         super().__init__(parent)
+        self._profile = profile
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -78,12 +87,24 @@ class _ConditionRow(QWidget):
         if condition and condition.type in CONDITION_TYPES:
             self.type_combo.setCurrentIndex(
                 CONDITION_TYPES.index(condition.type))
-        self.type_combo.currentIndexChanged.connect(self._update_placeholder)
+        self.type_combo.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.type_combo, stretch=1)
 
+        # Two value widgets — one freeform, one pattern picker. Visibility
+        # toggles based on the condition type.
         self.value_edit = QLineEdit(condition.value if condition else "")
-        self._update_placeholder()
         layout.addWidget(self.value_edit, stretch=2)
+
+        self.pattern_combo = QComboBox()
+        if profile is not None:
+            for pattern in profile.content_patterns:
+                self.pattern_combo.addItem(pattern.name, userData=pattern.id)
+        if condition and condition.type == "content_matches":
+            for i in range(self.pattern_combo.count()):
+                if self.pattern_combo.itemData(i) == condition.value:
+                    self.pattern_combo.setCurrentIndex(i)
+                    break
+        layout.addWidget(self.pattern_combo, stretch=2)
 
         self.remove_btn = QPushButton("×")
         self.remove_btn.setObjectName("secondary")
@@ -91,28 +112,37 @@ class _ConditionRow(QWidget):
         self.remove_btn.setCursor(Qt.PointingHandCursor)
         layout.addWidget(self.remove_btn)
 
-    def _update_placeholder(self) -> None:
+        self._on_type_changed()
+
+    def _on_type_changed(self) -> None:
         ct = self.type_combo.currentData()
         self.value_edit.setPlaceholderText(_CONDITION_HELP.get(ct, ""))
+        is_pattern = ct == "content_matches"
+        self.value_edit.setVisible(not is_pattern)
+        self.pattern_combo.setVisible(is_pattern)
 
     def to_condition(self) -> Condition:
-        return Condition(
-            type=self.type_combo.currentData(),
-            value=self.value_edit.text().strip(),
-        )
+        ct = self.type_combo.currentData()
+        if ct == "content_matches":
+            value = self.pattern_combo.currentData() or ""
+        else:
+            value = self.value_edit.text().strip()
+        return Condition(type=ct, value=value)
 
 
 class RuleEditDialog(QDialog):
     def __init__(self, *, rule: Rule | None = None,
                  categories: list[Category],
+                 profile: Profile | None = None,
                  test_folder: Path | None = None,
                  parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit rule" if rule else "New rule")
-        self.setMinimumWidth(540)
+        self.setMinimumWidth(580)
 
         self._original = rule
         self._categories = categories
+        self._profile = profile
         self._test_folder = test_folder
         self._test_bridge = _TestBridge()
         self._test_bridge.counted.connect(self._on_test_counted)
@@ -125,7 +155,17 @@ class RuleEditDialog(QDialog):
         self.name_edit.setPlaceholderText("e.g. Old invoices")
         form.addRow("Rule name", self.name_edit)
 
-        outer.addWidget(self._section_label("Conditions (all must match)"))
+        op_row = QHBoxLayout()
+        op_row.addWidget(self._section_label("Conditions"))
+        op_row.addStretch(1)
+        op_row.addWidget(QLabel("Match:"))
+        self.operator_combo = QComboBox()
+        self.operator_combo.addItem("All (AND)", userData="and")
+        self.operator_combo.addItem("Any (OR)", userData="or")
+        if rule and rule.condition_root and rule.condition_root.operator == "or":
+            self.operator_combo.setCurrentIndex(1)
+        op_row.addWidget(self.operator_combo)
+        outer.addLayout(op_row)
 
         self._conditions_holder = QFrame()
         self._conditions_layout = QVBoxLayout(self._conditions_holder)
@@ -139,9 +179,23 @@ class RuleEditDialog(QDialog):
         add_btn.clicked.connect(lambda: self._add_condition_row())
         outer.addWidget(add_btn, alignment=Qt.AlignLeft)
 
-        # Seed with the rule's existing conditions, or one empty row.
-        if rule and rule.conditions:
-            for c in rule.conditions:
+        # Seed with the rule's existing conditions (prefer the tree if set),
+        # or with one empty row when creating a new rule. Nested groups
+        # collapse to their leaves — the UI is flat for now.
+        seed: list[Condition] = []
+        if rule:
+            if rule.condition_root:
+                def collect(group: ConditionGroup) -> None:
+                    for item in group.items:
+                        if isinstance(item, ConditionGroup):
+                            collect(item)
+                        else:
+                            seed.append(item)
+                collect(rule.condition_root)
+            elif rule.conditions:
+                seed = list(rule.conditions)
+        if seed:
+            for c in seed:
                 self._add_condition_row(c)
         else:
             self._add_condition_row()
@@ -177,6 +231,14 @@ class RuleEditDialog(QDialog):
         action_row.addWidget(self.browse_btn)
 
         outer.addLayout(action_row)
+
+        rename_row = QHBoxLayout()
+        rename_row.addWidget(QLabel("Rename to:"))
+        self.rename_edit = QLineEdit(rule.action.rename_template if rule else "")
+        self.rename_edit.setPlaceholderText(
+            "Optional. Tokens: {stem} {ext} {name} {year} {month} {day}")
+        rename_row.addWidget(self.rename_edit)
+        outer.addLayout(rename_row)
 
         if rule and rule.action.type in ("move_to_category", "copy_to_category"):
             for i, cat in enumerate(categories):
@@ -217,7 +279,7 @@ class RuleEditDialog(QDialog):
         return label
 
     def _add_condition_row(self, condition: Condition | None = None) -> None:
-        row = _ConditionRow(condition)
+        row = _ConditionRow(condition, profile=self._profile)
         row.remove_btn.clicked.connect(lambda: self._remove_row(row))
         self._conditions_layout.addWidget(row)
 
@@ -296,11 +358,18 @@ class RuleEditDialog(QDialog):
             target = self.action_target_edit.text().strip()
         else:
             target = ""
-        action = Action(type=at, target=target)
+        action = Action(
+            type=at, target=target,
+            rename_template=self.rename_edit.text().strip(),
+        )
+
+        operator = self.operator_combo.currentData() or "and"
+        root = ConditionGroup(operator=operator, items=list(conditions))
 
         if self._original:
             self._original.name = self.name_edit.text().strip()
-            self._original.conditions = conditions
+            self._original.conditions = conditions  # keep flat in sync
+            self._original.condition_root = root
             self._original.action = action
             return self._original
 
@@ -309,5 +378,6 @@ class RuleEditDialog(QDialog):
             name=self.name_edit.text().strip(),
             enabled=True,
             conditions=conditions,
+            condition_root=root,
             action=action,
         )

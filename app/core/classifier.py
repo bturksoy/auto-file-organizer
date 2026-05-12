@@ -16,7 +16,9 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.content import cv_signals, read_docx_text_cached, read_pdf_text_cached
-from app.core.models import Action, Category, Condition, Profile, Rule
+from app.core.models import (
+    Action, Category, Condition, ConditionGroup, ContentPattern, Profile, Rule,
+)
 from app.core.normalize import normalize
 
 
@@ -39,7 +41,7 @@ def _file_meta(path: Path) -> FileMeta:
     except OSError:
         size = 0
         mtime = time.time()
-    return FileMeta(
+    meta = FileMeta(
         name=path.name,
         name_norm=normalize(path.name),
         ext=path.suffix.lower(),
@@ -47,9 +49,14 @@ def _file_meta(path: Path) -> FileMeta:
         mtime=mtime,
         parent_norm=normalize(str(path.parent)),
     )
+    # Stash the original Path so content-pattern conditions can read the file
+    # without us having to round-trip the string back.
+    meta._orig_path = path  # type: ignore[attr-defined]
+    return meta
 
 
-def _evaluate_condition(c: Condition, m: FileMeta) -> bool:
+def _evaluate_condition(c: Condition, m: FileMeta,
+                        profile: Profile | None = None) -> bool:
     needle = (c.value or "").strip()
     numeric_types = {"size_above_mb", "size_below_mb",
                      "age_above_days", "age_below_days"}
@@ -98,14 +105,80 @@ def _evaluate_condition(c: Condition, m: FileMeta) -> bool:
             return False
         age_days = (time.time() - m.mtime) / 86400.0
         return age_days > days if c.type == "age_above_days" else age_days < days
+    if c.type in ("modified_after", "modified_before"):
+        try:
+            cutoff = datetime.fromisoformat(needle).timestamp()
+        except (TypeError, ValueError):
+            return False
+        return (m.mtime > cutoff if c.type == "modified_after"
+                else m.mtime < cutoff)
+    if c.type == "content_matches":
+        if profile is None:
+            return False
+        pattern = next(
+            (p for p in profile.content_patterns if p.id == needle), None)
+        if pattern is None:
+            return False
+        return _match_content_pattern(pattern, m)
     return False
 
 
-def _rule_matches(rule: Rule, m: FileMeta) -> bool:
-    if not rule.enabled or not rule.conditions:
+def _evaluate_group(group: ConditionGroup, m: FileMeta,
+                    profile: Profile | None = None) -> bool:
+    if not group.items:
         return False
-    # All conditions must hold (AND). To express OR, split into multiple rules.
-    return all(_evaluate_condition(c, m) for c in rule.conditions)
+    op = group.operator
+    results = (
+        _evaluate_group(item, m, profile) if isinstance(item, ConditionGroup)
+        else _evaluate_condition(item, m, profile)
+        for item in group.items
+    )
+    return any(results) if op == "or" else all(results)
+
+
+def _rule_matches(rule: Rule, m: FileMeta,
+                  profile: Profile | None = None) -> bool:
+    if not rule.enabled:
+        return False
+    # Prefer the new tree representation when present; otherwise fall back
+    # to the flat AND list of conditions for legacy profiles.
+    if rule.condition_root is not None:
+        return _evaluate_group(rule.condition_root, m, profile)
+    if not rule.conditions:
+        return False
+    return all(_evaluate_condition(c, m, profile) for c in rule.conditions)
+
+
+def _match_content_pattern(pattern: ContentPattern, m: FileMeta) -> bool:
+    """Run a user-defined keyword match against the file's text content."""
+    ext = m.ext
+    if ext not in (".pdf", ".docx"):
+        return False
+    path = Path(m.parent_norm) / m.name  # parent_norm is normalized; rebuild
+    # Easier: use the original path. _file_meta lost the original — but
+    # callers always pass FileMeta built from a real Path. Reconstruct
+    # using the directory from disk lookup instead.
+    # Pragmatic: caller path is the only thing we have. We stash it on
+    # meta as `_orig_path` from _file_meta below to keep this clean.
+    real = getattr(m, "_orig_path", None)
+    if real is None:
+        return False
+    try:
+        st = real.stat()
+    except OSError:
+        return False
+    if ext == ".pdf":
+        text = read_pdf_text_cached(str(real), st.st_mtime, st.st_size)
+    else:
+        text = read_docx_text_cached(str(real), st.st_mtime, st.st_size)
+    if not text:
+        return False
+    n_text = normalize(text)
+    strong_norms = [normalize(k) for k in pattern.strong]
+    weak_norms = [normalize(k) for k in pattern.weak]
+    if any(k in n_text for k in strong_norms):
+        return True
+    return sum(1 for k in weak_norms if k in n_text) >= pattern.weak_threshold
 
 
 def expand_placeholders(template: str, src: Path, m: FileMeta,
@@ -153,7 +226,7 @@ def classify(profile: Profile, path: Path,
     # 1. Rules (skipped in categories_only)
     if mode != "categories_only":
         for rule in profile.rules:
-            if _rule_matches(rule, m):
+            if _rule_matches(rule, m, profile):
                 return rule.action, f"rule: {rule.name}"
         if mode == "rules_only":
             return Action(type="skip"), "no rule matched"
@@ -193,22 +266,45 @@ def classify(profile: Profile, path: Path,
     return Action(type="skip"), "no match"
 
 
+def _renamed_filename(action: Action, src: Path, m: FileMeta) -> str:
+    """Apply action.rename_template to the destination filename if set."""
+    template = (action.rename_template or "").strip()
+    if not template:
+        return src.name
+    dt = datetime.fromtimestamp(m.mtime)
+    tokens = {
+        "stem": src.stem,
+        "name": src.name,
+        "ext": src.suffix,            # includes the dot, like ".pdf"
+        "year": f"{dt:%Y}",
+        "month": f"{dt:%m}",
+        "day": f"{dt:%d}",
+    }
+    out = template
+    for key, value in tokens.items():
+        out = out.replace("{" + key + "}", value)
+    return out
+
+
 def resolve_destination(profile: Profile, src: Path,
                         action: Action) -> Path | None:
     """Translate an Action into an absolute destination path.
 
-    Supports {year}/{month}/{day}/{ext}/{category} placeholders in both
-    the category's target_folder and a literal folder target.
+    Supports {year}/{month}/{day}/{ext}/{category} placeholders in the
+    target folder. The destination filename can be templated via the
+    action's rename_template (tokens: {stem} {ext} {name} {year} {month}
+    {day}).
     """
     if action.type == "skip":
         return None
     m = _file_meta(src)
+    filename = _renamed_filename(action, src, m)
 
     if action.type in ("move_to_folder", "copy_to_folder"):
         folder = action.target.strip()
         if not folder:
             return None
-        return Path(expand_placeholders(folder, src, m)) / src.name
+        return Path(expand_placeholders(folder, src, m)) / filename
 
     if action.type in ("move_to_category", "copy_to_category"):
         cat = _category_by_id(profile, action.target)
@@ -218,8 +314,8 @@ def resolve_destination(profile: Profile, src: Path,
             cat.target_folder or cat.name, src, m, category=cat)
         base = profile.settings.destination_folder.strip()
         if base:
-            return Path(expand_placeholders(base, src, m)) / leaf / src.name
-        return src.parent / leaf / src.name
+            return Path(expand_placeholders(base, src, m)) / leaf / filename
+        return src.parent / leaf / filename
 
     return None
 

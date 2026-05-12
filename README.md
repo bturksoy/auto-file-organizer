@@ -105,6 +105,30 @@ an interval, and the app keeps a tray icon. The tray menu has
 **Show window / Organize now / Pause / Quit**, and a Windows
 notification fires after each pass that actually moved files.
 
+For folders like Downloads where the lag of a scheduled scan is
+noticeable, turn on **Real-time watch** instead — the app listens for
+file-system events and organizes new arrivals within ~2 seconds of the
+download finishing.
+
+### Power features
+
+- **AND/OR rule logic** — group conditions with `AND` or `OR` from the
+  rule editor instead of every condition having to match.
+- **Date conditions** — match files modified before or after a specific
+  date (e.g. archive every PDF from 2023).
+- **Rename templates** — every action can rewrite the destination
+  filename using `{stem}`, `{ext}`, `{year}`, `{month}`, `{day}` tokens.
+  Example: `{year}-{month}_{stem}{ext}` → `2026-05_invoice.pdf`.
+- **Content patterns** — in **Settings → Content patterns**, define
+  reusable keyword detectors for PDF/DOCX (like the built-in CV one)
+  and reference them from rules with the `Content matches` condition.
+- **Find duplicates** — from **Home → Find duplicates…**, scan the
+  current folder for byte-identical copies, tick the extras, and send
+  them to the Recycle Bin.
+- **Preview pane** — the plan editor shows a thumbnail (images), text
+  snippet (PDF/DOCX/source files), or file info for the selected entry
+  so you can verify before reassigning.
+
 ## How classification works
 
 Each profile picks one of three **organization modes**:

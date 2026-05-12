@@ -133,6 +133,7 @@ class RulesPage(BasePage):
             return
         dlg = RuleEditDialog(
             categories=profile.categories,
+            profile=profile,
             test_folder=self._state.current_folder,
             parent=self,
         )
@@ -151,6 +152,7 @@ class RulesPage(BasePage):
             return
         dlg = RuleEditDialog(
             rule=target, categories=profile.categories,
+            profile=profile,
             test_folder=self._state.current_folder,
             parent=self,
         )

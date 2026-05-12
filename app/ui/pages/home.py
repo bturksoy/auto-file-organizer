@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from app.core.i18n import i18n
 from app.core.organize import apply_plan, scan_folder, undo_last
 from app.core.state import AppState
+from app.ui.dialogs.duplicates import DuplicatesDialog
 from app.ui.dialogs.plan_editor import PlanEditorDialog
 from app.ui.dialogs.stats import StatsDialog
 from app.ui.dialogs.undo_history import UndoHistoryDialog
@@ -110,6 +111,15 @@ class HomePage(BasePage):
         self.edit_plan_btn.setEnabled(False)
         self.edit_plan_btn.clicked.connect(self._open_plan_editor)
         buttons.addWidget(self.edit_plan_btn)
+
+        self.duplicates_btn = QPushButton("Find duplicates...")
+        self.duplicates_btn.setObjectName("secondary")
+        self.duplicates_btn.setCursor(Qt.PointingHandCursor)
+        self.duplicates_btn.setToolTip(
+            "Scan the current folder for byte-identical copies and "
+            "send extras to the Recycle Bin")
+        self.duplicates_btn.clicked.connect(self._open_duplicates)
+        buttons.addWidget(self.duplicates_btn)
 
         buttons.addStretch(1)
         layout.addLayout(buttons)
@@ -352,6 +362,17 @@ class HomePage(BasePage):
                 names = {c.id: c.name for c in profile.categories}
                 lookup = names.get
             StatsDialog(result, category_lookup=lookup, parent=self).exec()
+
+    def _open_duplicates(self) -> None:
+        folder = self._state.current_folder
+        if not folder or not folder.is_dir():
+            QMessageBox.information(
+                self, "Pick a folder",
+                "Pick a folder first to scan it for duplicates.")
+            return
+        profile = self._state.active_profile()
+        recursive = bool(profile and profile.settings.recursive_scan)
+        DuplicatesDialog(folder, recursive=recursive, parent=self).exec()
 
     def _open_history(self) -> None:
         folder = self._state.current_folder

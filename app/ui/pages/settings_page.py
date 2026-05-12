@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QHBoxLayout, QLabel, QRadioButton,
+    QButtonGroup, QComboBox, QHBoxLayout, QLabel, QPushButton, QRadioButton,
     QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from app.core.i18n import i18n
 from app.core.models import ORG_MODES
 from app.core.state import AppState
+from app.ui.dialogs.content_patterns import ContentPatternsDialog
 from app.ui.pages.base_page import BasePage
 from app.ui.widgets.card import Card
 from app.ui.widgets.toggle import Toggle
@@ -60,6 +61,7 @@ class SettingsPage(BasePage):
         for builder in (
             self._build_mode_card,
             self._build_scan_card,
+            self._build_content_patterns_card,
             self._build_notifications_card,
             self._build_auto_card,
             self._build_theme_card,
@@ -111,6 +113,41 @@ class SettingsPage(BasePage):
         hint2.setWordWrap(True)
         card.layout().addWidget(hint2)
         return card
+
+    def _build_content_patterns_card(self) -> Card:
+        card = Card()
+        card.layout().addWidget(self._h2("CONTENT PATTERNS"))
+        hint = QLabel(
+            "Define reusable keyword detectors for PDF and DOCX files (like "
+            "the built-in CV detector). Reference them from rules using a "
+            "'Content matches' condition."
+        )
+        hint.setStyleSheet("color: #9ba0ab;")
+        hint.setWordWrap(True)
+        card.layout().addWidget(hint)
+
+        self._patterns_count_label = QLabel("")
+        self._patterns_count_label.setStyleSheet(
+            "font-size: 13px; padding-top: 4px;")
+        card.layout().addWidget(self._patterns_count_label)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        btn = QPushButton("Manage patterns…")
+        btn.clicked.connect(self._open_patterns_dialog)
+        row.addWidget(btn)
+        card.layout().addLayout(row)
+        return card
+
+    def _open_patterns_dialog(self) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        dlg = ContentPatternsDialog(profile, parent=self)
+        if dlg.exec():
+            profile.content_patterns = dlg.result_patterns()
+            self._state.save()
+            self._sync()
 
     def _on_recursive_toggled(self, value: bool) -> None:
         profile = self._state.active_profile()
@@ -205,6 +242,27 @@ class SettingsPage(BasePage):
         row2.addWidget(QLabel("Start in tray:"))
         row2.addWidget(self._tray_start_toggle)
         card.layout().addLayout(row2)
+
+        # Real-time watch row (event-driven; fires within seconds of a new
+        # file appearing instead of waiting for the next scheduled tick).
+        row3 = QHBoxLayout()
+        rt_title = QLabel("Real-time watch (instant organize on new files)")
+        rt_title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        row3.addWidget(rt_title)
+        row3.addStretch(1)
+        self._realtime_toggle = Toggle()
+        self._realtime_toggle.toggled.connect(self._on_realtime_toggled)
+        row3.addWidget(self._realtime_toggle)
+        card.layout().addLayout(row3)
+
+        rt_hint = QLabel(
+            "Listens for file-system events on the watched folders and "
+            "organizes new arrivals after a 2-second settle delay. Useful "
+            "for the Downloads folder. Requires the 'watchdog' package."
+        )
+        rt_hint.setStyleSheet("color: #9ba0ab;")
+        rt_hint.setWordWrap(True)
+        card.layout().addWidget(rt_hint)
         return card
 
     def _build_language_card(self) -> Card:
@@ -281,6 +339,11 @@ class SettingsPage(BasePage):
         self._tray_start_toggle.setChecked(s.start_in_tray)
         self._recursive_toggle.setChecked(s.recursive_scan)
         self._pdf_toggle.setChecked(s.inspect_pdf_docx)
+        self._realtime_toggle.setChecked(s.realtime_watch)
+        n = len(profile.content_patterns)
+        self._patterns_count_label.setText(
+            f"{n} pattern{'s' if n != 1 else ''} defined."
+        )
         # Language
         for i in range(self._lang_combo.count()):
             if self._lang_combo.itemData(i) == self._state.data.language:
@@ -328,6 +391,13 @@ class SettingsPage(BasePage):
         if not profile:
             return
         profile.settings.start_in_tray = value
+        self._state.save()
+
+    def _on_realtime_toggled(self, value: bool) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        profile.settings.realtime_watch = value
         self._state.save()
 
     def _on_language_changed(self, _index: int) -> None:

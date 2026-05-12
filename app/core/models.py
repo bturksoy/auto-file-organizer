@@ -25,6 +25,9 @@ CONDITION_TYPES = (
     "size_below_mb",
     "age_above_days",         # file mtime older than N days
     "age_below_days",         # file mtime newer than N days
+    "modified_after",         # value = YYYY-MM-DD
+    "modified_before",        # value = YYYY-MM-DD
+    "content_matches",        # value = ContentPattern id (see profile.content_patterns)
 )
 
 # --- Action types -----------------------------------------------------------
@@ -52,11 +55,45 @@ class Condition:
 class Action:
     type: str
     target: str = ""
+    # Optional Python str.format template applied to the destination
+    # filename. Tokens: {stem} {ext} {name} {year} {month} {day}.
+    # Example: "{stem}_{year}-{month}{ext}".
+    rename_template: str = ""
 
     @staticmethod
     def from_dict(d: dict) -> "Action":
-        return Action(type=str(d.get("type", "")),
-                      target=str(d.get("target", "")))
+        return Action(
+            type=str(d.get("type", "")),
+            target=str(d.get("target", "")),
+            rename_template=str(d.get("rename_template") or ""),
+        )
+
+
+@dataclass
+class ConditionGroup:
+    """Tree node for AND/OR rule logic.
+
+    A group has an operator ("and" or "or") and a list of items where
+    each item is either a Condition or another ConditionGroup. Leaving
+    the operator at "and" with a flat list of Conditions reproduces the
+    pre-v2.6 behaviour exactly.
+    """
+    operator: str = "and"
+    items: list = field(default_factory=list)  # list[Condition | ConditionGroup]
+
+    @staticmethod
+    def from_dict(d: dict) -> "ConditionGroup":
+        op = str(d.get("operator") or "and").lower()
+        if op not in ("and", "or"):
+            op = "and"
+        out: list = []
+        for raw in d.get("items", []):
+            if isinstance(raw, dict):
+                if "operator" in raw:
+                    out.append(ConditionGroup.from_dict(raw))
+                else:
+                    out.append(Condition.from_dict(raw))
+        return ConditionGroup(operator=op, items=out)
 
 
 @dataclass
@@ -64,17 +101,52 @@ class Rule:
     id: str
     name: str
     enabled: bool = True
+    # `conditions` is the flat AND list kept for backwards compatibility.
+    # `condition_root` is the new tree representation; when set, it takes
+    # precedence. Old configs load with condition_root=None and continue
+    # to evaluate via the flat list.
     conditions: list[Condition] = field(default_factory=list)
+    condition_root: ConditionGroup | None = None
     action: Action = field(default_factory=lambda: Action(type="skip"))
 
     @staticmethod
     def from_dict(d: dict) -> "Rule":
+        flat = [Condition.from_dict(c) for c in d.get("conditions", [])]
+        root = None
+        if isinstance(d.get("condition_root"), dict):
+            root = ConditionGroup.from_dict(d["condition_root"])
         return Rule(
             id=str(d.get("id") or uuid.uuid4().hex),
             name=str(d.get("name", "")),
             enabled=bool(d.get("enabled", True)),
-            conditions=[Condition.from_dict(c) for c in d.get("conditions", [])],
+            conditions=flat,
+            condition_root=root,
             action=Action.from_dict(d.get("action", {})),
+        )
+
+
+@dataclass
+class ContentPattern:
+    """A user-defined "smart detector" mirroring the CV signal lists.
+
+    Strong / weak keyword lists are matched against extracted PDF/DOCX
+    text. A file is considered a match if it has any strong hit or at
+    least `weak_threshold` weak hits.
+    """
+    id: str
+    name: str
+    strong: list[str] = field(default_factory=list)
+    weak: list[str] = field(default_factory=list)
+    weak_threshold: int = 2
+
+    @staticmethod
+    def from_dict(d: dict) -> "ContentPattern":
+        return ContentPattern(
+            id=str(d.get("id") or uuid.uuid4().hex),
+            name=str(d.get("name", "")),
+            strong=list(d.get("strong", []) or []),
+            weak=list(d.get("weak", []) or []),
+            weak_threshold=max(1, int(d.get("weak_threshold", 2) or 2)),
         )
 
 
@@ -121,6 +193,9 @@ class ProfileSettings:
     start_in_tray: bool = False
     recursive_scan: bool = False
     inspect_pdf_docx: bool = True
+    # Real-time watcher: organizes on file-system events instead of (or in
+    # addition to) the timed scheduler. Requires the `watchdog` package.
+    realtime_watch: bool = False
 
     @staticmethod
     def from_dict(d: dict) -> "ProfileSettings":
@@ -145,6 +220,7 @@ class ProfileSettings:
             start_in_tray=bool(d.get("start_in_tray", False)),
             recursive_scan=bool(d.get("recursive_scan", False)),
             inspect_pdf_docx=bool(d.get("inspect_pdf_docx", True)),
+            realtime_watch=bool(d.get("realtime_watch", False)),
         )
 
 
@@ -155,6 +231,7 @@ class Profile:
     color: str = "#7c8cff"
     rules: list[Rule] = field(default_factory=list)
     categories: list[Category] = field(default_factory=list)
+    content_patterns: list[ContentPattern] = field(default_factory=list)
     settings: ProfileSettings = field(default_factory=ProfileSettings)
 
     @staticmethod
@@ -165,6 +242,10 @@ class Profile:
             color=str(d.get("color") or "#7c8cff"),
             rules=[Rule.from_dict(r) for r in d.get("rules", [])],
             categories=[Category.from_dict(c) for c in d.get("categories", [])],
+            content_patterns=[
+                ContentPattern.from_dict(p)
+                for p in d.get("content_patterns", []) or []
+            ],
             settings=ProfileSettings.from_dict(d.get("settings", {})),
         )
 

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from app.core.state import AppState
 from app.services.scheduler import Scheduler
 from app.services.tray import TrayController
+from app.services.watcher import Watcher
 from app.services.updates import (
     APP_VERSION, download_and_swap, fetch_latest_release, human_size,
     is_newer, is_running_frozen,
@@ -138,19 +139,34 @@ def main() -> int:
 
     tray = TrayController(parent=None, icon=icon if not icon.isNull() else None)
     scheduler = Scheduler(state)
+    watcher = Watcher(state)
 
     def current_window():
         return holder["window"]
 
     def update_tray_visibility():
         profile = state.active_profile()
-        if profile and profile.settings.auto_organize:
+        wants_scheduler = bool(profile and profile.settings.auto_organize)
+        wants_watcher = bool(
+            profile and profile.settings.realtime_watch and watcher.is_supported
+        )
+        if wants_scheduler or wants_watcher:
             tray.show()
+        else:
+            tray.hide()
+
+        if wants_scheduler:
             if not scheduler.is_running:
                 scheduler.start()
         else:
-            tray.hide()
             scheduler.stop()
+
+        # Always restart the watcher when settings/profiles change so a
+        # different watched_folders list takes effect immediately.
+        if wants_watcher:
+            watcher.restart()
+        else:
+            watcher.stop()
 
     def show_window():
         w = current_window()
@@ -166,6 +182,7 @@ def main() -> int:
 
     def quit_app():
         scheduler.stop()
+        watcher.stop()
         tray.hide()
         app.quit()
 
@@ -180,6 +197,7 @@ def main() -> int:
             tray.notify(f"Organized {moved} file(s) in {folder}")
 
     scheduler.pass_complete.connect(on_scheduler_pass)
+    watcher.pass_complete.connect(on_scheduler_pass)
 
     state.profiles_changed.connect(update_tray_visibility)
     state.active_profile_changed.connect(update_tray_visibility)
