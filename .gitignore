@@ -1,0 +1,30 @@
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Local executables (distributed via GitHub Releases instead)
+FileOrganizer*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Project-local
+.file-organizer-undo.json
