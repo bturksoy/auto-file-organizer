@@ -13,19 +13,26 @@ import os
 import queue
 import re
 import shutil
+import ssl
+import subprocess
 import sys
 import threading
 import tkinter as tk
 import unicodedata
+import urllib.request
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 from tkinter import END, filedialog, messagebox, ttk
 
 APP_NAME = "File Organizer"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 UNDO_LOG_NAME = ".file-organizer-undo.json"
 BMC_URL = "https://buymeacoffee.com/bturksoy"
+UPDATE_API_URL = (
+    "https://api.github.com/repos/bturksoy/auto-file-organizer/releases/latest"
+)
+UPDATE_HTTP_TIMEOUT = 8
 DEFAULT_LANG = "en"
 
 # pypdf is noisy about malformed streams. We don't want to crash on it.
@@ -89,6 +96,25 @@ UI_STRINGS = {
         "settings_save": "Save",
         "settings_cancel": "Cancel",
         "settings_restart_note": "Language change takes effect immediately.",
+        "settings_check_updates": "Check for updates on startup",
+        "menu_check_updates": "Check for updates",
+        "update_available": "Update available: v{version}  ",
+        "update_install_btn": "Install",
+        "update_dismiss_btn": "Dismiss",
+        "update_no_update": "You're on the latest version (v{version}).",
+        "update_check_failed": "Update check failed.",
+        "update_confirm_title": "Install update",
+        "update_confirm_body": (
+            "Version v{ver} is available (current: v{cur}).\n"
+            "Download size: {size}.\n\nDownload and install now?"
+        ),
+        "update_downloading": "Downloading update...",
+        "update_apply_ready": (
+            "The new version has been downloaded. The app will close and "
+            "restart automatically."
+        ),
+        "update_apply_failed": "Could not apply update:\n{err}",
+        "update_download_failed": "Could not download update:\n{err}",
         "about_title": "About",
         "about_body": (
             "{app} v{ver}\n\nA standalone file organizer.\n"
@@ -165,6 +191,25 @@ UI_STRINGS = {
         "settings_save": "Kaydet",
         "settings_cancel": "İptal",
         "settings_restart_note": "Dil değişikliği anında geçerli olur.",
+        "settings_check_updates": "Açılışta güncellemeleri kontrol et",
+        "menu_check_updates": "Güncellemeleri kontrol et",
+        "update_available": "Yeni sürüm var: v{version}  ",
+        "update_install_btn": "Yükle",
+        "update_dismiss_btn": "Yoksay",
+        "update_no_update": "En güncel sürümdesin (v{version}).",
+        "update_check_failed": "Güncelleme kontrolü başarısız.",
+        "update_confirm_title": "Güncellemeyi yükle",
+        "update_confirm_body": (
+            "v{ver} sürümü mevcut (şu an: v{cur}).\n"
+            "İndirilecek boyut: {size}.\n\nŞimdi indirilip kurulsun mu?"
+        ),
+        "update_downloading": "Güncelleme indiriliyor...",
+        "update_apply_ready": (
+            "Yeni sürüm indirildi. Uygulama kapanıp otomatik yeniden "
+            "başlatılacak."
+        ),
+        "update_apply_failed": "Güncelleme uygulanamadı:\n{err}",
+        "update_download_failed": "Güncelleme indirilemedi:\n{err}",
         "about_title": "Hakkında",
         "about_body": (
             "{app} v{ver}\n\nBağımsız bir dosya düzenleyici.\n"
@@ -240,6 +285,159 @@ class I18N:
 
 
 i18n = I18N()
+
+
+# ---------------------------------------------------------------------------
+# Update checking
+# ---------------------------------------------------------------------------
+
+def _version_tuple(v: str) -> tuple:
+    """Convert a version string like 'v1.10.2-beta' into (1, 10, 2)."""
+    parts = []
+    for chunk in v.lstrip("v").split("."):
+        digits = re.match(r"\d+", chunk)
+        parts.append(int(digits.group()) if digits else 0)
+    return tuple(parts) or (0,)
+
+
+def is_newer_version(remote: str, local: str) -> bool:
+    return _version_tuple(remote) > _version_tuple(local)
+
+
+def _human_size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Build an SSL context that works across diverse Windows setups.
+
+    Order of preference:
+      1. truststore — uses the Windows native cert store, which is the
+         only thing that knows about corporate root CAs installed by IT
+         policy (common cause of "unable to get local issuer certificate").
+      2. certifi — bundled CA list, works on most consumer machines.
+      3. Python default — last resort.
+    """
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        pass
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    return ssl.create_default_context()
+
+
+def fetch_latest_release_info() -> dict | None:
+    """Query GitHub for the latest release. None on any failure.
+
+    The returned dict contains: version, url (exe asset), size, page (html_url).
+    """
+    try:
+        req = urllib.request.Request(
+            UPDATE_API_URL,
+            headers={
+                "User-Agent": f"FileOrganizer/{APP_VERSION}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=UPDATE_HTTP_TIMEOUT,
+                                    context=_ssl_context()) as r:
+            data = json.load(r)
+    except Exception:
+        return None
+
+    tag = (data.get("tag_name") or "").strip()
+    if not tag:
+        return None
+
+    exe_asset = next(
+        (a for a in data.get("assets", [])
+         if a.get("name", "").lower().endswith(".exe")),
+        None,
+    )
+    if not exe_asset:
+        return None
+
+    return {
+        "version": tag.lstrip("v"),
+        "url": exe_asset["browser_download_url"],
+        "size": exe_asset.get("size", 0),
+        "page": data.get("html_url"),
+    }
+
+
+def is_running_frozen() -> bool:
+    """True when launched as a PyInstaller-bundled exe."""
+    return getattr(sys, "frozen", False)
+
+
+def apply_update(asset_url: str, on_progress=None) -> None:
+    """Download new exe and arrange a swap-and-restart via a small batch.
+
+    Raises an exception on download/IO failure. On success this never returns:
+    it spawns a detached process and calls sys.exit.
+    """
+    if not is_running_frozen():
+        raise RuntimeError("Auto-update only works from the packaged exe.")
+
+    current = Path(sys.executable).resolve()
+    new_path = current.with_name(current.stem + ".new.exe")
+
+    # Stream the download so we can report progress.
+    req = urllib.request.Request(
+        asset_url,
+        headers={"User-Agent": f"FileOrganizer/{APP_VERSION}"},
+    )
+    with urllib.request.urlopen(req, timeout=UPDATE_HTTP_TIMEOUT * 4,
+                                context=_ssl_context()) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        done = 0
+        with open(new_path, "wb") as out:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                out.write(chunk)
+                done += len(chunk)
+                if on_progress and total:
+                    on_progress(done, total)
+
+    # A small batch waits for the running exe to exit, then swaps and restarts.
+    # The loop accounts for Windows holding the file briefly after exit.
+    bat = current.with_name("_fo_update.bat")
+    script = (
+        '@echo off\r\n'
+        'timeout /t 2 /nobreak >nul\r\n'
+        ':loop\r\n'
+        f'move /y "{new_path}" "{current}" >nul 2>&1\r\n'
+        f'if exist "{new_path}" (\r\n'
+        '  timeout /t 1 /nobreak >nul\r\n'
+        '  goto loop\r\n'
+        ')\r\n'
+        f'start "" "{current}"\r\n'
+        '(goto) 2>nul & del "%~f0"\r\n'
+    )
+    bat.write_text(script, encoding="ascii")
+
+    detached = 0x00000008  # DETACHED_PROCESS
+    no_window = 0x08000000  # CREATE_NO_WINDOW
+    subprocess.Popen(
+        ["cmd.exe", "/c", str(bat)],
+        creationflags=detached | no_window,
+        close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    sys.exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -750,14 +948,16 @@ def resolve_conflict(dst: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 class SettingsDialog(tk.Toplevel):
-    """Modal preferences dialog. Currently exposes the UI language."""
+    """Modal preferences dialog: language + update behaviour."""
 
-    def __init__(self, master: tk.Misc, on_language_change) -> None:
+    def __init__(self, master: tk.Misc, settings: dict,
+                 on_language_change, on_save) -> None:
         super().__init__(master)
         self.transient(master)
         self.resizable(False, False)
         self.title(i18n.t("settings_title"))
         self._on_language_change = on_language_change
+        self._on_save = on_save
         self._current_lang = i18n.lang
 
         frame = ttk.Frame(self, padding=16)
@@ -767,20 +967,26 @@ class SettingsDialog(tk.Toplevel):
             row=0, column=0, sticky="w", padx=(0, 10), pady=4)
 
         self._lang_var = tk.StringVar(value=LANGUAGES[self._current_lang])
-        combo = ttk.Combobox(
+        ttk.Combobox(
             frame, state="readonly",
             values=list(LANGUAGES.values()),
             textvariable=self._lang_var,
             width=20,
-        )
-        combo.grid(row=0, column=1, sticky="w", pady=4)
+        ).grid(row=0, column=1, sticky="w", pady=4)
+
+        self._check_updates_var = tk.BooleanVar(
+            value=settings.get("check_updates_on_startup", True))
+        ttk.Checkbutton(
+            frame, text=i18n.t("settings_check_updates"),
+            variable=self._check_updates_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         ttk.Label(frame, text=i18n.t("settings_restart_note"),
                   foreground="#666").grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(16, 0))
         ttk.Button(btn_row, text=i18n.t("settings_cancel"),
                    command=self.destroy).pack(side="right", padx=(8, 0))
         ttk.Button(btn_row, text=i18n.t("settings_save"),
@@ -796,6 +1002,10 @@ class SettingsDialog(tk.Toplevel):
             (c for c, label in LANGUAGES.items() if label == chosen_label),
             self._current_lang,
         )
+        self._on_save({
+            "language": code,
+            "check_updates_on_startup": self._check_updates_var.get(),
+        })
         if code != self._current_lang:
             self._on_language_change(code)
         self.destroy()
@@ -822,6 +1032,13 @@ class OrganizerApp:
         self._apply_language()
         self.root.after(100, self._drain_queue)
 
+        # Auto-check for updates on launch (background thread, opt-out via
+        # Settings). Skipped in development since updating only makes sense
+        # for the bundled exe.
+        if (self.settings.get("check_updates_on_startup", True)
+                and is_running_frozen()):
+            self.root.after(800, lambda: self._spawn_update_check(silent=True))
+
     # ------- UI construction ------------------------------------------------
 
     def _label_var(self, key: str) -> tk.StringVar:
@@ -847,19 +1064,46 @@ class OrganizerApp:
         self._menu_settings.add_command(
             label=i18n.t("menu_preferences"), command=self._open_settings)
         self._menu_help.add_command(
+            label=i18n.t("menu_check_updates"),
+            command=self._check_updates_manual)
+        self._menu_help.add_separator()
+        self._menu_help.add_command(
             label=i18n.t("menu_about"), command=self._show_about)
 
         self._menubar = bar
 
     def _build_ui(self) -> None:
         self.root.title(i18n.t("app_title"))
-        self.root.geometry("860x600")
-        self.root.minsize(700, 480)
+        self.root.geometry("860x620")
+        self.root.minsize(700, 500)
 
         pad = {"padx": 10, "pady": 6}
 
-        top = ttk.Frame(self.root)
-        top.pack(fill="x", **pad)
+        # Update banner — only visible when a new release is detected.
+        self._update_banner = tk.Frame(
+            self.root, bg="#fff8c5", bd=1, relief="solid",
+        )
+        self._update_banner_label = tk.Label(
+            self._update_banner, text="", bg="#fff8c5", anchor="w",
+        )
+        self._update_banner_label.pack(
+            side="left", padx=10, pady=6, fill="x", expand=True)
+        self._update_install_btn = tk.Button(
+            self._update_banner, text=i18n.t("update_install_btn"),
+            command=self._begin_update_install,
+        )
+        self._update_install_btn.pack(side="left", padx=(0, 6), pady=4)
+        self._update_dismiss_btn = tk.Button(
+            self._update_banner, text=i18n.t("update_dismiss_btn"),
+            command=self._dismiss_update,
+        )
+        self._update_dismiss_btn.pack(side="left", padx=(0, 8), pady=4)
+        # Hidden initially.
+        self._pending_update: dict | None = None
+
+        self._top_frame = ttk.Frame(self.root)
+        self._top_frame.pack(fill="x", **pad)
+        top = self._top_frame
         ttk.Label(top, textvariable=self._label_var("folder_label")).pack(
             side="left")
         ttk.Entry(top, textvariable=self.folder_var).pack(
@@ -938,19 +1182,108 @@ class OrganizerApp:
     # ------- Menu actions ---------------------------------------------------
 
     def _open_settings(self) -> None:
-        SettingsDialog(self.root, on_language_change=self._change_language)
+        SettingsDialog(
+            self.root,
+            settings=self.settings,
+            on_language_change=self._change_language,
+            on_save=self._save_settings_dict,
+        )
+
+    def _save_settings_dict(self, updates: dict) -> None:
+        self.settings.update(updates)
+        save_settings(self.settings)
 
     def _change_language(self, code: str) -> None:
         i18n.set_language(code)
         self.settings["language"] = code
         save_settings(self.settings)
         self._apply_language()
+        # If the update banner is showing, refresh its text too.
+        if self._pending_update:
+            self._show_update_banner(self._pending_update)
 
     def _show_about(self) -> None:
         messagebox.showinfo(
             i18n.t("about_title"),
             i18n.t("about_body", app=APP_NAME, ver=APP_VERSION),
         )
+
+    # ------- Updates --------------------------------------------------------
+
+    def _check_updates_manual(self) -> None:
+        self.status_var.set(i18n.t("update_downloading"))
+        self._spawn_update_check(silent=False)
+
+    def _spawn_update_check(self, silent: bool) -> None:
+        threading.Thread(
+            target=self._update_check_worker, args=(silent,), daemon=True,
+        ).start()
+
+    def _update_check_worker(self, silent: bool) -> None:
+        info = fetch_latest_release_info()
+        if not info:
+            if not silent:
+                self.msg_queue.put(("update_failed", None))
+            return
+        if is_newer_version(info["version"], APP_VERSION):
+            dismissed = self.settings.get("dismissed_version", "")
+            if silent and dismissed and not is_newer_version(
+                info["version"], dismissed
+            ):
+                return
+            self.msg_queue.put(("update_found", info))
+        elif not silent:
+            self.msg_queue.put(("update_none", APP_VERSION))
+
+    def _show_update_banner(self, info: dict) -> None:
+        self._pending_update = info
+        self._update_banner_label.config(
+            text=i18n.t("update_available", version=info["version"]))
+        self._update_install_btn.config(text=i18n.t("update_install_btn"))
+        self._update_dismiss_btn.config(text=i18n.t("update_dismiss_btn"))
+        # Insert banner above everything else.
+        self._update_banner.pack(
+            side="top", fill="x", padx=10, pady=(6, 0),
+            before=self._top_frame,
+        )
+
+    def _dismiss_update(self) -> None:
+        if self._pending_update:
+            self.settings["dismissed_version"] = self._pending_update["version"]
+            save_settings(self.settings)
+        self._pending_update = None
+        self._update_banner.pack_forget()
+
+    def _begin_update_install(self) -> None:
+        if not self._pending_update:
+            return
+        info = self._pending_update
+        confirmed = messagebox.askyesno(
+            i18n.t("update_confirm_title"),
+            i18n.t(
+                "update_confirm_body",
+                ver=info["version"], cur=APP_VERSION,
+                size=_human_size(info["size"]),
+            ),
+        )
+        if not confirmed:
+            return
+        self._set_busy(True)
+        self.status_var.set(i18n.t("update_downloading"))
+        self.progress.config(mode="determinate", maximum=100, value=0)
+        threading.Thread(
+            target=self._update_apply_worker, args=(info["url"],),
+            daemon=True,
+        ).start()
+
+    def _update_apply_worker(self, url: str) -> None:
+        def progress(done, total):
+            pct = int(done * 100 / total) if total else 0
+            self.msg_queue.put(("progress", pct))
+        try:
+            apply_update(url, on_progress=progress)
+        except Exception as e:
+            self.msg_queue.put(("update_apply_error", str(e)))
 
     # ------- Helpers --------------------------------------------------------
 
@@ -1246,6 +1579,28 @@ class OrganizerApp:
                 elif kind == "done":
                     self.status_var.set(payload)
                     self._set_busy(False)
+                elif kind == "update_found":
+                    self._show_update_banner(payload)
+                elif kind == "update_none":
+                    messagebox.showinfo(
+                        i18n.t("app_title"),
+                        i18n.t("update_no_update", version=payload),
+                    )
+                    self.status_var.set(i18n.t("status_ready"))
+                elif kind == "update_failed":
+                    messagebox.showwarning(
+                        i18n.t("app_title"),
+                        i18n.t("update_check_failed"),
+                    )
+                    self.status_var.set(i18n.t("status_ready"))
+                elif kind == "update_apply_error":
+                    self._set_busy(False)
+                    self.progress.config(value=0)
+                    self.status_var.set(i18n.t("status_ready"))
+                    messagebox.showerror(
+                        i18n.t("app_title"),
+                        i18n.t("update_apply_failed", err=payload),
+                    )
         except queue.Empty:
             pass
         self.root.after(100, self._drain_queue)

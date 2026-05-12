@@ -17,6 +17,8 @@ No installation, no setup, no dependencies — just one `.exe`.
 - **Multilingual filename rules** — works on Turkish, English, and German filenames
 - **Bilingual UI** — switch between English and Turkish from the Settings menu;
   preference persists across sessions
+- **Auto-update on launch** — the app checks GitHub for newer releases on
+  startup; when one is available a non-intrusive banner offers to install it
 - **Smart Turkish handling** — folds dotless `ı → i`, strips combining marks
   (so `Kılavuz` matches `kilavuz`, `EHLİYET` matches `ehliyet`)
 - **Fuzzy match for broken PDFs** — when a PDF's font has missing Unicode mappings
@@ -101,9 +103,53 @@ suffixes so nothing is ever overwritten.
 1. Grab `FileOrganizer.exe` from the [latest release](../../releases/latest).
 2. Double-click. There is no installer.
 
-The file is roughly 27 MB (bundles Python 3.13, tkinter, pypdf, python-docx via
+The file is roughly 28 MB (bundles Python 3.13, tkinter, pypdf, python-docx via
 PyInstaller `--onefile`). First launch unpacks once into your temp directory
 and is slightly slower than subsequent runs — this is normal.
+
+### SmartScreen and antivirus warnings
+
+When you first run the exe, Windows SmartScreen may show a blue dialog:
+
+> Windows protected your PC
+
+This is the standard warning for any unsigned executable downloaded from the
+internet, especially a new one with no established reputation. The dialog
+itself is **not** flagging the file as malicious — it just hasn't seen enough
+downloads to mark it as known-safe.
+
+To proceed:
+
+1. Click **More info**
+2. Click **Run anyway**
+
+Some antivirus engines (including Windows Defender heuristics) will also
+occasionally flag PyInstaller-packaged executables. This is a well-known
+[false-positive pattern](https://github.com/pyinstaller/pyinstaller/issues/5854)
+that affects most Python apps packaged this way: the bootloader extracts
+files to a temporary directory at runtime, which heuristically resembles
+self-extracting malware.
+
+### Verifying your download
+
+Each release lists the SHA-256 hash of the published `FileOrganizer.exe`.
+Verify your downloaded copy in PowerShell:
+
+```powershell
+Get-FileHash FileOrganizer.exe -Algorithm SHA256
+```
+
+Compare the printed hash to the one in the release notes. If they match,
+the file is identical to what was uploaded.
+
+### Reporting false positives
+
+If your antivirus flags the file, you can submit it as a false positive:
+
+- **Microsoft Defender:** https://www.microsoft.com/wdsi/filesubmission
+- **VirusTotal scan:** https://www.virustotal.com (drag the exe in)
+
+These submissions help train the engines and reduce flags for future users.
 
 ## Use
 
@@ -117,8 +163,19 @@ and is slightly slower than subsequent runs — this is normal.
 
 ### Settings
 
-Open **Settings → Preferences** to switch the interface language. The choice
-is saved to `%APPDATA%\FileOrganizer\settings.json` and reused next time.
+Open **Settings → Preferences** to switch the interface language or toggle
+the startup update check. Choices are saved to
+`%APPDATA%\FileOrganizer\settings.json` and reused next time.
+
+### Updates
+
+The app pings GitHub once at launch to see whether a newer release is
+available. If one is, a yellow banner appears at the top of the window with
+**Install** and **Dismiss** buttons. Installing downloads the new exe to a
+temp file, swaps it in place via a small helper script, and relaunches.
+
+You can also trigger a manual check anytime via **Help → Check for updates**,
+and disable the automatic check from Preferences.
 
 ## Safety notes
 
