@@ -75,7 +75,7 @@ class CategoriesPage(BasePage):
 
     def _add_new(self) -> None:
         dlg = CategoryEditDialog(parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec():
             profile = self._state.active_profile()
             if profile is None:
                 return
@@ -92,7 +92,7 @@ class CategoriesPage(BasePage):
         if not target:
             return
         dlg = CategoryEditDialog(category=target, parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec():
             self._state.save()
             self._refresh()
 

@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 
 from app.core.models import Profile
 from app.core.state import AppState
-from app.ui.dialogs.profile_edit import ProfileNameDialog
+from app.core.templates import build_from_template
+from app.ui.dialogs.profile_edit import ProfileCreateDialog, ProfileNameDialog
 from app.ui.pages.base_page import BasePage, InfoBanner
 from app.ui.widgets.profile_card import ProfileCard
 
@@ -85,20 +86,10 @@ class ProfilesPage(BasePage):
     # ----- actions -----
 
     def _add_new(self) -> None:
-        dlg = ProfileNameDialog(title="New profile", parent=self)
-        if dlg.exec() != dlg.Accepted:
+        dlg = ProfileCreateDialog(parent=self)
+        if not dlg.exec():
             return
-        # Seed an empty profile (no rules, no categories) unless you'd prefer
-        # to clone the active one. Cloning is friendlier for first-time users.
-        active = self._state.active_profile()
-        seed_categories = (
-            [copy.deepcopy(c) for c in active.categories] if active else [])
-        profile = Profile(
-            id=uuid.uuid4().hex,
-            name=dlg.value(),
-            rules=[],
-            categories=seed_categories,
-        )
+        profile = build_from_template(dlg.chosen_template(), dlg.chosen_name())
         self._state.add_profile(profile)
 
     def _rename(self, profile_id: str) -> None:
@@ -107,7 +98,7 @@ class ProfilesPage(BasePage):
             return
         dlg = ProfileNameDialog(
             title="Rename profile", initial=target.name, parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec():
             target.name = dlg.value()
             self._state.save()
             self._refresh()

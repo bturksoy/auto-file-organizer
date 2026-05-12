@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.core.classifier import (
-    category_folder_names, classify, resolve_destination,
+    category_folder_names, classify, is_copy_action, resolve_destination,
 )
 from app.core.models import Action, Profile
 
@@ -26,6 +26,7 @@ class PlannedMove:
     dst: Path
     category_id: str
     reason: str
+    is_copy: bool = False
 
     def to_display(self, profile: Profile) -> str:
         return self.dst.parent.name or "?"
@@ -42,22 +43,48 @@ class OrganizeResult:
     per_category: dict[str, int] | None = None
 
 
-def scan_folder(root: Path, profile: Profile,
-                inspect_content: bool = True,
-                progress_cb: Callable[[int, int, str], None] | None = None,
-                ) -> list[PlannedMove]:
-    """Walk the top level of *root* and produce a move plan."""
-    skip_dirs = category_folder_names(profile)
+def _collect_files(root: Path, profile: Profile,
+                   skip_dirs: set[str]) -> list[Path]:
     entries: list[Path] = []
-    for entry in root.iterdir():
-        if entry.is_dir():
-            continue
+    walker: Callable[[Path], list[Path]]
+    if profile.settings.recursive_scan:
+        # Recursive walk, but never descend into folders we own.
+        def walk(base: Path) -> list[Path]:
+            result = []
+            for entry in base.iterdir():
+                if entry.is_dir():
+                    if entry.name in skip_dirs or entry.name.startswith("."):
+                        continue
+                    result.extend(walk(entry))
+                else:
+                    result.append(entry)
+            return result
+        walker = walk
+    else:
+        walker = lambda base: [p for p in base.iterdir() if p.is_file()]
+
+    for entry in walker(root):
         name = entry.name
         if name in DEFAULT_SKIP_NAMES or name.startswith("."):
             continue
         if name in skip_dirs:
             continue
         entries.append(entry)
+    return entries
+
+
+def scan_folder(root: Path, profile: Profile,
+                inspect_content: bool = True,
+                progress_cb: Callable[[int, int, str], None] | None = None,
+                ) -> list[PlannedMove]:
+    """Walk *root* and produce a move plan.
+
+    Honours profile.settings.recursive_scan: when off we only look at the top
+    level; when on we descend into subfolders but never into category folders
+    the profile owns.
+    """
+    skip_dirs = category_folder_names(profile)
+    entries = _collect_files(root, profile, skip_dirs)
 
     plan: list[PlannedMove] = []
     total = len(entries)
@@ -68,9 +95,13 @@ def scan_folder(root: Path, profile: Profile,
         dst = resolve_destination(profile, entry, action)
         if action.type == "skip" or dst is None:
             continue
-        category_id = action.target if action.type == "move_to_category" else "_folder"
+        if action.type in ("move_to_category", "copy_to_category"):
+            category_id = action.target
+        else:
+            category_id = "_folder"
         plan.append(PlannedMove(
             src=entry, dst=dst, category_id=category_id, reason=reason,
+            is_copy=is_copy_action(action),
         ))
     return plan
 
@@ -105,8 +136,16 @@ def apply_plan(root: Path, plan: list[PlannedMove],
         try:
             move.dst.parent.mkdir(parents=True, exist_ok=True)
             final = _resolve_conflict(move.dst)
-            shutil.move(str(move.src), str(final))
-            undo_records.append({"from": str(final), "to": str(move.src)})
+            if move.is_copy:
+                shutil.copy2(str(move.src), str(final))
+                # Copies are reversible by deleting the duplicate, so the
+                # undo record points the other way: "to remove this copy".
+                undo_records.append({
+                    "copy": True, "path": str(final),
+                })
+            else:
+                shutil.move(str(move.src), str(final))
+                undo_records.append({"from": str(final), "to": str(move.src)})
             result.moved += 1
             result.bytes_total += size
             result.per_category[move.category_id] = (
@@ -161,9 +200,16 @@ def undo_last(root: Path) -> tuple[int, int]:
     restored = 0
     errors = 0
     for m in moves:
-        src = Path(m["from"])
-        dst = Path(m["to"])
         try:
+            if m.get("copy"):
+                # Undo of a copy = delete the duplicate.
+                target = Path(m["path"])
+                if target.exists():
+                    target.unlink()
+                restored += 1
+                continue
+            src = Path(m["from"])
+            dst = Path(m["to"])
             if not src.exists():
                 continue
             dst.parent.mkdir(parents=True, exist_ok=True)

@@ -14,12 +14,17 @@ from app.ui.widgets.toggle import Toggle
 
 _CONDITION_LABELS = {
     "name_contains": "Name contains",
+    "name_does_not_contain": "Name does NOT contain",
     "name_starts_with": "Name starts with",
     "name_ends_with": "Name ends with",
-    "name_regex": "Name matches",
+    "name_regex": "Name matches regex",
     "extension_is": "Extension is",
+    "extension_in": "Extension in",
+    "path_contains": "Path contains",
     "size_above_mb": "Size above (MB)",
     "size_below_mb": "Size below (MB)",
+    "age_above_days": "Older than (days)",
+    "age_below_days": "Newer than (days)",
 }
 
 
@@ -29,14 +34,18 @@ def describe_condition(c: Condition) -> str:
 
 
 def describe_action(action: Action, *, category_lookup=None) -> str:
-    if action.type == "move_to_category":
-        if category_lookup:
-            name = category_lookup(action.target)
-            if name:
-                return f"→ Move to {name}"
-        return f"→ Move to {action.target}"
-    if action.type == "move_to_folder":
-        return f"→ Move to {action.target or '...'}"
+    verb_map = {
+        "move_to_category": "Move",
+        "copy_to_category": "Copy",
+        "move_to_folder": "Move",
+        "copy_to_folder": "Copy",
+    }
+    verb = verb_map.get(action.type)
+    if action.type in ("move_to_category", "copy_to_category"):
+        name = category_lookup(action.target) if category_lookup else None
+        return f"→ {verb} to {name or action.target}"
+    if action.type in ("move_to_folder", "copy_to_folder"):
+        return f"→ {verb} to {action.target or '...'}"
     return "→ Skip"
 
 

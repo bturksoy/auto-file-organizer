@@ -85,7 +85,7 @@ class RulesPage(BasePage):
         if not profile:
             return
         dlg = RuleEditDialog(categories=profile.categories, parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec():
             profile.rules.append(dlg.result_rule())
             self._state.save()
             self._refresh()
@@ -99,7 +99,7 @@ class RulesPage(BasePage):
             return
         dlg = RuleEditDialog(rule=target, categories=profile.categories,
                              parent=self)
-        if dlg.exec() == dlg.Accepted:
+        if dlg.exec():
             self._state.save()
             self._refresh()
 

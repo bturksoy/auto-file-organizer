@@ -12,7 +12,7 @@
     <img alt="Download" src="https://img.shields.io/badge/Download-FileOrganizer.exe-7c8cff?style=for-the-badge">
   </a>
   <img alt="Built with PySide6" src="https://img.shields.io/badge/Built%20with-PySide6-41cd52?style=for-the-badge">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
+  <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge">
 </p>
 
 ---
@@ -173,4 +173,9 @@ If this saves you time and you'd like to say thanks:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+This project is licensed under the **GNU General Public License v3.0** —
+see [LICENSE](LICENSE) for the full text.
+
+In short: you are free to use, study, modify, and redistribute the
+software, but any distributed modifications must also be released under
+the GPLv3 and ship their source.

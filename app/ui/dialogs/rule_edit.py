@@ -16,12 +16,40 @@ from app.core.models import (
 
 _CONDITION_HELP = {
     "name_contains": "substring",
+    "name_does_not_contain": "substring to exclude",
     "name_starts_with": "prefix",
     "name_ends_with": "suffix",
     "name_regex": "regex pattern",
     "extension_is": ".pdf",
+    "extension_in": ".jpg, .png, .webp",
+    "path_contains": "subfolder name in source path",
     "size_above_mb": "10",
     "size_below_mb": "10",
+    "age_above_days": "30  (older than)",
+    "age_below_days": "30  (newer than)",
+}
+
+_CONDITION_LABELS = {
+    "name_contains": "Name contains",
+    "name_does_not_contain": "Name does NOT contain",
+    "name_starts_with": "Name starts with",
+    "name_ends_with": "Name ends with",
+    "name_regex": "Name matches regex",
+    "extension_is": "Extension is",
+    "extension_in": "Extension in list",
+    "path_contains": "Source path contains",
+    "size_above_mb": "Size above (MB)",
+    "size_below_mb": "Size below (MB)",
+    "age_above_days": "Age above (days)",
+    "age_below_days": "Age below (days)",
+}
+
+_ACTION_LABELS = {
+    "move_to_category": "Move to category",
+    "move_to_folder": "Move to folder",
+    "copy_to_category": "Copy to category",
+    "copy_to_folder": "Copy to folder",
+    "skip": "Skip (leave in place)",
 }
 
 
@@ -34,7 +62,10 @@ class _ConditionRow(QWidget):
 
         self.type_combo = QComboBox()
         for ct in CONDITION_TYPES:
-            self.type_combo.addItem(ct.replace("_", " ").title(), userData=ct)
+            self.type_combo.addItem(
+                _CONDITION_LABELS.get(ct, ct.replace("_", " ").title()),
+                userData=ct,
+            )
         if condition and condition.type in CONDITION_TYPES:
             self.type_combo.setCurrentIndex(
                 CONDITION_TYPES.index(condition.type))
@@ -106,7 +137,10 @@ class RuleEditDialog(QDialog):
         action_row = QHBoxLayout()
         self.action_type = QComboBox()
         for at in ACTION_TYPES:
-            self.action_type.addItem(at.replace("_", " ").title(), userData=at)
+            self.action_type.addItem(
+                _ACTION_LABELS.get(at, at.replace("_", " ").title()),
+                userData=at,
+            )
         if rule and rule.action.type in ACTION_TYPES:
             self.action_type.setCurrentIndex(
                 ACTION_TYPES.index(rule.action.type))
@@ -130,12 +164,12 @@ class RuleEditDialog(QDialog):
 
         outer.addLayout(action_row)
 
-        if rule and rule.action.type == "move_to_category":
+        if rule and rule.action.type in ("move_to_category", "copy_to_category"):
             for i, cat in enumerate(categories):
                 if cat.id == rule.action.target:
                     self.action_target_combo.setCurrentIndex(i)
                     break
-        elif rule and rule.action.type == "move_to_folder":
+        elif rule and rule.action.type in ("move_to_folder", "copy_to_folder"):
             self.action_target_edit.setText(rule.action.target)
         self._action_changed()
 
@@ -162,9 +196,11 @@ class RuleEditDialog(QDialog):
 
     def _action_changed(self) -> None:
         at = self.action_type.currentData()
-        self.action_target_combo.setVisible(at == "move_to_category")
-        self.action_target_edit.setVisible(at == "move_to_folder")
-        self.browse_btn.setVisible(at == "move_to_folder")
+        wants_cat = at in ("move_to_category", "copy_to_category")
+        wants_folder = at in ("move_to_folder", "copy_to_folder")
+        self.action_target_combo.setVisible(wants_cat)
+        self.action_target_edit.setVisible(wants_folder)
+        self.browse_btn.setVisible(wants_folder)
 
     def _browse_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Pick destination")
@@ -187,9 +223,9 @@ class RuleEditDialog(QDialog):
                     conditions.append(c)
 
         at = self.action_type.currentData()
-        if at == "move_to_category":
+        if at in ("move_to_category", "copy_to_category"):
             target = self.action_target_combo.currentData() or ""
-        elif at == "move_to_folder":
+        elif at in ("move_to_folder", "copy_to_folder"):
             target = self.action_target_edit.text().strip()
         else:
             target = ""

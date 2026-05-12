@@ -14,19 +14,26 @@ from typing import Any
 # --- Condition types accepted by the rules engine ---------------------------
 CONDITION_TYPES = (
     "name_contains",
+    "name_does_not_contain",
     "name_starts_with",
     "name_ends_with",
     "name_regex",
     "extension_is",
+    "extension_in",           # comma-separated list
+    "path_contains",          # source directory path substring
     "size_above_mb",
     "size_below_mb",
+    "age_above_days",         # file mtime older than N days
+    "age_below_days",         # file mtime newer than N days
 )
 
 # --- Action types -----------------------------------------------------------
 ACTION_TYPES = (
-    "move_to_category",  # target = category id
-    "move_to_folder",    # target = absolute folder path
-    "skip",              # leave file untouched
+    "move_to_category",       # target = category id
+    "move_to_folder",         # target = absolute folder path
+    "copy_to_category",       # duplicate to category instead of moving
+    "copy_to_folder",         # duplicate to specific folder
+    "skip",                   # leave file untouched
 )
 
 
@@ -108,6 +115,8 @@ class ProfileSettings:
     auto_organize: bool = False
     auto_interval_min: int = 30
     start_in_tray: bool = False
+    recursive_scan: bool = False
+    inspect_pdf_docx: bool = True
 
     @staticmethod
     def from_dict(d: dict) -> "ProfileSettings":
@@ -122,6 +131,8 @@ class ProfileSettings:
             auto_organize=bool(d.get("auto_organize", False)),
             auto_interval_min=max(1, int(d.get("auto_interval_min", 30) or 30)),
             start_in_tray=bool(d.get("start_in_tray", False)),
+            recursive_scan=bool(d.get("recursive_scan", False)),
+            inspect_pdf_docx=bool(d.get("inspect_pdf_docx", True)),
         )
 
 

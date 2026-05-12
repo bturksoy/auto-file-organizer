@@ -45,10 +45,67 @@ class SettingsPage(BasePage):
 
     def build_body(self, layout: QVBoxLayout) -> None:
         layout.addWidget(self._build_mode_card())
+        layout.addWidget(self._build_scan_card())
         layout.addWidget(self._build_notifications_card())
         layout.addWidget(self._build_auto_card())
         layout.addWidget(self._build_language_card())
         layout.addWidget(self._build_updates_card())
+
+    def _build_scan_card(self) -> Card:
+        card = Card()
+        card.layout().addWidget(self._h2("SCANNING"))
+
+        row1 = QHBoxLayout()
+        title = QLabel("Recursive scan (include subfolders)")
+        title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        row1.addWidget(title)
+        row1.addStretch(1)
+        self._recursive_toggle = Toggle()
+        self._recursive_toggle.toggled.connect(self._on_recursive_toggled)
+        row1.addWidget(self._recursive_toggle)
+        card.layout().addLayout(row1)
+
+        hint1 = QLabel(
+            "When on, the scanner descends into subfolders but never enters "
+            "category folders this profile owns. Useful for flattening a "
+            "messy tree."
+        )
+        hint1.setStyleSheet("color: #9ba0ab;")
+        hint1.setWordWrap(True)
+        card.layout().addWidget(hint1)
+
+        row2 = QHBoxLayout()
+        title2 = QLabel("Inspect PDF / DOCX content for CV detection")
+        title2.setStyleSheet("font-size: 14px; font-weight: 600;")
+        row2.addWidget(title2)
+        row2.addStretch(1)
+        self._pdf_toggle = Toggle()
+        self._pdf_toggle.toggled.connect(self._on_pdf_toggled)
+        row2.addWidget(self._pdf_toggle)
+        card.layout().addLayout(row2)
+
+        hint2 = QLabel(
+            "Opens PDFs and Word documents to find CV-like keywords. Turn "
+            "off if you want a faster scan and never want content inspection."
+        )
+        hint2.setStyleSheet("color: #9ba0ab;")
+        hint2.setWordWrap(True)
+        card.layout().addWidget(hint2)
+        return card
+
+    def _on_recursive_toggled(self, value: bool) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        profile.settings.recursive_scan = value
+        self._state.save()
+
+    def _on_pdf_toggled(self, value: bool) -> None:
+        profile = self._state.active_profile()
+        if not profile:
+            return
+        profile.settings.inspect_pdf_docx = value
+        self._state.save()
 
     # ----- cards -----
 
@@ -178,6 +235,8 @@ class SettingsPage(BasePage):
         self._auto_toggle.setChecked(s.auto_organize)
         self._interval_spin.setValue(s.auto_interval_min)
         self._tray_start_toggle.setChecked(s.start_in_tray)
+        self._recursive_toggle.setChecked(s.recursive_scan)
+        self._pdf_toggle.setChecked(s.inspect_pdf_docx)
         # Language
         for i in range(self._lang_combo.count()):
             if self._lang_combo.itemData(i) == self._state.data.language:
