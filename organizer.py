@@ -28,7 +28,7 @@ from pathlib import Path
 from tkinter import END, filedialog, messagebox, ttk
 
 APP_NAME = "File Organizer"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 UNDO_LOG_NAME = ".file-organizer-undo.json"
 BMC_URL = "https://buymeacoffee.com/bturksoy"
 UPDATE_API_URL = (
@@ -475,10 +475,11 @@ def is_running_frozen() -> bool:
 
 
 def apply_update(asset_url: str, on_progress=None) -> None:
-    """Download new exe and arrange a swap-and-restart via a small batch.
+    """Download the new exe and spawn a swap-and-restart helper.
 
-    Raises an exception on download/IO failure. On success this never returns:
-    it spawns a detached process and calls sys.exit.
+    Does NOT terminate the current process. The caller is responsible for
+    shutting down the app cleanly so the running exe releases its file lock;
+    only then can the helper move the new binary into place.
     """
     if not is_running_frozen():
         raise RuntimeError("Auto-update only works from the packaged exe.")
@@ -505,34 +506,41 @@ def apply_update(asset_url: str, on_progress=None) -> None:
                 if on_progress and total:
                     on_progress(done, total)
 
-    # A small batch waits for the running exe to exit, then swaps and restarts.
-    # The loop accounts for Windows holding the file briefly after exit.
+    # Swap-and-restart batch.
+    # - Initial 3s grace so the parent has time to fully exit
+    # - Bounded retry (~40s total) so we never loop forever if the file
+    #   somehow stays locked or the new binary disappears
+    # - All output suppressed; only one cmd is ever spawned (detached)
     bat = current.with_name("_fo_update.bat")
     script = (
         '@echo off\r\n'
-        'timeout /t 2 /nobreak >nul\r\n'
+        'setlocal\r\n'
+        'set /a RETRIES=40\r\n'
+        'ping 127.0.0.1 -n 4 >nul 2>&1\r\n'
         ':loop\r\n'
         f'move /y "{new_path}" "{current}" >nul 2>&1\r\n'
-        f'if exist "{new_path}" (\r\n'
-        '  timeout /t 1 /nobreak >nul\r\n'
-        '  goto loop\r\n'
-        ')\r\n'
-        f'start "" "{current}"\r\n'
+        f'if not exist "{new_path}" goto done\r\n'
+        'set /a RETRIES=RETRIES-1\r\n'
+        'if %RETRIES% LEQ 0 goto done\r\n'
+        'ping 127.0.0.1 -n 2 >nul 2>&1\r\n'
+        'goto loop\r\n'
+        ':done\r\n'
+        f'if exist "{current}" start "" "{current}"\r\n'
         '(goto) 2>nul & del "%~f0"\r\n'
     )
     bat.write_text(script, encoding="ascii")
 
-    detached = 0x00000008  # DETACHED_PROCESS
-    no_window = 0x08000000  # CREATE_NO_WINDOW
+    # CREATE_NO_WINDOW alone gives us a hidden, detached child cmd.
+    # (DETACHED_PROCESS + CREATE_NO_WINDOW together can fail on some Windows
+    # builds; sticking to the simpler flag is more reliable.)
     subprocess.Popen(
         ["cmd.exe", "/c", str(bat)],
-        creationflags=detached | no_window,
+        creationflags=0x08000000,
         close_fds=True,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    sys.exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -1730,6 +1738,25 @@ class OrganizerApp:
             daemon=True,
         ).start()
 
+    def _shutdown_for_update(self) -> None:
+        """Tear down the app so the batch can swap the exe.
+
+        Must run on the main thread. We stop the scheduler and tray, destroy
+        the Tk root (releasing the GUI handles), and then call os._exit to
+        guarantee the process is gone within a tick — this is the file lock
+        the swap helper has been waiting on.
+        """
+        self._scheduler_stop.set()
+        try:
+            self._stop_tray()
+        except Exception:
+            pass
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        os._exit(0)
+
     def _update_apply_worker(self, url: str) -> None:
         def progress(done, total):
             pct = int(done * 100 / total) if total else 0
@@ -1738,6 +1765,12 @@ class OrganizerApp:
             apply_update(url, on_progress=progress)
         except Exception as e:
             self.msg_queue.put(("update_apply_error", str(e)))
+            return
+        # Hand control back to the main thread; it owns process shutdown.
+        # We MUST NOT call sys.exit/os._exit from a worker thread — sys.exit
+        # only stops the current thread, leaving the exe locked and the
+        # update batch in an infinite retry loop.
+        self.msg_queue.put(("update_apply_done", None))
 
     # ------- Helpers --------------------------------------------------------
 
@@ -2190,6 +2223,8 @@ class OrganizerApp:
                         i18n.t("app_title"),
                         i18n.t("update_apply_failed", err=payload),
                     )
+                elif kind == "update_apply_done":
+                    self._shutdown_for_update()
                 elif kind == "plan_ready":
                     plan, _root, verbose = payload
                     self._current_plan = plan
