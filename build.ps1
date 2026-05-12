@@ -11,6 +11,7 @@ py -m PyInstaller --onefile --windowed --name FileOrganizer --noconfirm `
     --collect-all tkinterdnd2 `
     --collect-all pystray `
     --collect-all PIL `
+    --add-data "resources;resources" `
     organizer.py
 
 if (Test-Path dist\FileOrganizer.exe) {

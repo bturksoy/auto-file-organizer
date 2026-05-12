@@ -244,6 +244,25 @@ cd auto-file-organizer
 
 Output: `dist\FileOrganizer.exe`
 
+## Contributing translations
+
+Translations and rule data live as plain JSON files under
+[`resources/`](resources/) — no Python required to contribute.
+
+- **`resources/i18n/<code>.json`** — UI strings + category folder names per
+  language. To add a language, copy `en.json` to `<code>.json`, translate
+  the values, and the app picks it up at next launch. See
+  [resources/i18n/README.md](resources/i18n/README.md) for the format and
+  placeholder list.
+- **`resources/data/cv_keywords.json`** — strong/weak keyword lists used
+  for PDF/DOCX CV detection. Add new languages or vocabulary here.
+- **`resources/data/extensions.json`** — extension-to-category mapping.
+- **`resources/data/skip_names.json`** — filenames the scanner ignores.
+
+These files get bundled into the exe at build time; for end users they
+become read-only resources inside the `.exe`. Contributors edit them in
+the repo and submit a PR.
+
 ## Stack
 
 - **Python 3.13** with **tkinter** for the UI (no extra GUI framework)

@@ -28,7 +28,7 @@ from pathlib import Path
 from tkinter import END, filedialog, messagebox, ttk
 
 APP_NAME = "File Organizer"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 UNDO_LOG_NAME = ".file-organizer-undo.json"
 BMC_URL = "https://buymeacoffee.com/bturksoy"
 UPDATE_API_URL = (
@@ -38,6 +38,70 @@ UPDATE_HTTP_TIMEOUT = 8
 DEFAULT_LANG = "en"
 RECENT_FOLDERS_LIMIT = 8
 MIN_AUTO_INTERVAL_MIN = 1
+
+
+# ---------------------------------------------------------------------------
+# Resource loading
+#
+# Translations and rule data live in JSON files under resources/ so they can
+# be edited (and contributed) without touching Python. At runtime we load
+# them from either the dev tree or the PyInstaller _MEIPASS extraction dir.
+# ---------------------------------------------------------------------------
+
+def _resources_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "resources"
+    return Path(__file__).resolve().parent / "resources"
+
+
+def _read_json(*parts) -> object:
+    path = _resources_dir().joinpath(*parts)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_i18n_bundles() -> tuple[dict, dict, dict]:
+    """Walk resources/i18n/*.json and assemble the three runtime tables.
+
+    Returns (languages, ui_strings, category_names) keyed by language code.
+    Missing or malformed files are skipped — a broken translation should not
+    take the whole app down.
+    """
+    languages: dict[str, str] = {}
+    ui: dict[str, dict] = {}
+    cats: dict[str, dict] = {}
+    i18n_dir = _resources_dir() / "i18n"
+    if not i18n_dir.is_dir():
+        return languages, ui, cats
+    for path in sorted(i18n_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        meta = data.get("_meta") or {}
+        code = meta.get("code") or path.stem
+        languages[code] = meta.get("name") or code.upper()
+        ui[code] = data.get("strings", {})
+        cats[code] = data.get("categories", {})
+    return languages, ui, cats
+
+
+def _load_extensions() -> dict[str, set[str]]:
+    raw = _read_json("data", "extensions.json")
+    return {key: set(exts) for key, exts in raw.items() if not key.startswith("_")}
+
+
+def _load_cv_keywords() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    raw = _read_json("data", "cv_keywords.json")
+    strong = tuple(raw.get("strong", []))
+    weak = tuple(raw.get("weak", []))
+    return strong, weak
+
+
+def _load_skip_names() -> set[str]:
+    raw = _read_json("data", "skip_names.json")
+    if isinstance(raw, list):
+        return set(raw)
+    return set(raw.get("names", []))
 
 # pypdf is noisy about malformed streams. We don't want to crash on it.
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -76,287 +140,17 @@ def save_settings(data: dict) -> None:
 # Internationalization
 # ---------------------------------------------------------------------------
 
-LANGUAGES = {"en": "English", "tr": "Türkçe"}
-
-UI_STRINGS = {
-    "en": {
-        "app_title": "File Organizer",
-        "folder_label": "Folder:",
-        "browse_btn": "Browse...",
-        "preview_btn": "Preview",
-        "organize_btn": "Organize",
-        "undo_btn": "Undo",
-        "verbose_check": "Diagnostic details",
-        "clear_log_btn": "Clear log",
-        "status_ready": "Ready.",
-        "menu_file": "File",
-        "menu_exit": "Exit",
-        "menu_settings": "Settings",
-        "menu_preferences": "Preferences...",
-        "menu_help": "Help",
-        "menu_about": "About",
-        "settings_title": "Preferences",
-        "settings_language": "Language:",
-        "settings_save": "Save",
-        "settings_cancel": "Cancel",
-        "settings_restart_note": "Language change takes effect immediately.",
-        "settings_check_updates": "Check for updates on startup",
-        "menu_check_updates": "Check for updates",
-        "update_available": "Update available: v{version}  ",
-        "update_install_btn": "Install",
-        "update_dismiss_btn": "Dismiss",
-        "update_no_update": "You're on the latest version (v{version}).",
-        "update_check_failed": "Update check failed.",
-        "update_confirm_title": "Install update",
-        "update_confirm_body": (
-            "Version v{ver} is available (current: v{cur}).\n"
-            "Download size: {size}.\n\nDownload and install now?"
-        ),
-        "update_downloading": "Downloading update...",
-        "update_apply_ready": (
-            "The new version has been downloaded. The app will close and "
-            "restart automatically."
-        ),
-        "update_apply_failed": "Could not apply update:\n{err}",
-        "update_download_failed": "Could not download update:\n{err}",
-        "open_in_explorer_btn": "Open",
-        "recent_folders_label": "Recent:",
-        "drop_hint": "Tip: you can drag and drop a folder onto this window.",
-        "stats_title": "Organize complete",
-        "stats_body": (
-            "{total} files moved into {cats} categories\n"
-            "Total size: {size}\n"
-            "Elapsed: {elapsed} s\n"
-            "Errors: {errors}"
-        ),
-        "stats_open_folder": "Open folder",
-        "stats_close": "Close",
-        "reclassify_menu": "Move to category...",
-        "reclassify_title": "Reassign file",
-        "reclassify_prompt": "Move '{name}' to which category?",
-        "settings_destination": "Destination folder (optional):",
-        "settings_destination_hint": (
-            "When set, organized files go here instead of staying in the "
-            "source folder. Leave empty to organize in place."
-        ),
-        "settings_destination_browse": "Browse...",
-        "settings_destination_clear": "Clear",
-        "settings_auto_section": "Background mode",
-        "settings_auto_enable": "Enable scheduled auto-organize",
-        "settings_auto_folder": "Folder to watch:",
-        "settings_auto_interval": "Interval (minutes):",
-        "settings_auto_start_minimized": "Start in tray when launched",
-        "settings_auto_hint": (
-            "When enabled, the app keeps a tray icon and re-organizes the "
-            "watched folder on a schedule. Closing the window minimizes to "
-            "tray instead of quitting."
-        ),
-        "tray_show": "Show window",
-        "tray_pause": "Pause auto-organize",
-        "tray_resume": "Resume auto-organize",
-        "tray_run_now": "Organize now",
-        "tray_quit": "Quit",
-        "tray_status_idle": "File Organizer — idle",
-        "tray_status_running": "File Organizer — organizing...",
-        "tray_status_paused": "File Organizer — paused",
-        "tray_notify_done": "Organized {n} file(s) in {folder}",
-        "auto_no_folder_set": (
-            "Auto-organize is enabled but no watched folder is set. "
-            "Open Settings to configure it."
-        ),
-        "about_title": "About",
-        "about_body": (
-            "{app} v{ver}\n\nA standalone file organizer.\n"
-            "Single .exe, no installation."
-        ),
-        "bmc_label": "Support the project",
-        "pick_folder_first": "Pick a folder first.",
-        "folder_not_found": "Folder not found:\n{path}",
-        "confirm_organize": (
-            "{path}\n\nFiles in this folder will be moved into category "
-            "subfolders. Continue?"
-        ),
-        "confirm_undo": (
-            "The last operation moved {n} file(s) on {date}. Undo it?"
-        ),
-        "preview_header": "=== Preview: {path} ===",
-        "preview_scanning": (
-            "(Scanning PDF and Word documents for CV content...)\n"
-        ),
-        "no_files": "Nothing to organize.",
-        "preview_summary": "Total: {total} files, {cats} categories.",
-        "verbose_hint": (
-            "Tip: a file in the wrong category? Tick 'Diagnostic details' "
-            "and re-run Preview."
-        ),
-        "preview_done": "Preview ready: {n} files.",
-        "organize_header": "=== Organizing: {path} ===",
-        "organize_done_status": "Done: {moved} moved, {errors} errors.",
-        "organize_done_log": "\nDone. {moved} file(s) moved, {errors} error(s).",
-        "undo_header": "=== Undoing: {date} ===",
-        "undo_done": "Undo complete.",
-        "undo_done_log": (
-            "\nUndo complete. {moved} restored, {errors} error(s)."
-        ),
-        "undo_no_history": "Nothing to undo.",
-        "undo_read_error": "Could not read undo log:\n{err}",
-        "scanning_progress": "Scanning {i}/{total}: {name}",
-        "error_label": "ERROR",
-        "skipped_missing": "SKIPPED (missing): {name}",
-        "reason_name": "name: '{m}'",
-        "reason_camelcase_cv": "name: CamelCase '{m}'",
-        "reason_ext": "ext {ext}",
-        "reason_ext_with_content": "ext {ext} ({note})",
-        "reason_ext_no_match": "no extension match: {ext}",
-        "reason_no_match_with_note": "no extension match ({note})",
-        "reason_content_strong": "{src} content strong: {kws}",
-        "reason_content_weak": "{src} content weak x{n}: {kws}",
-        "reason_content_no_text": "{src} no text (scanned or encrypted)",
-        "reason_content_not_cv_weak": "{src} not a CV (weak x{n}: {kws})",
-        "reason_content_not_cv": "{src} not a CV ({n} chars, no match)",
-        "warn_undo_write_failed": "WARNING: could not write undo log: {err}",
-        "fatal_error": "\nFATAL ERROR: {err}",
-        "error_done": "Error.",
-        "empty_done": "Empty.",
-    },
-    "tr": {
-        "app_title": "Dosya Düzenleyici",
-        "folder_label": "Klasör:",
-        "browse_btn": "Gözat...",
-        "preview_btn": "Önizle",
-        "organize_btn": "Düzenle",
-        "undo_btn": "Geri Al",
-        "verbose_check": "Tanı detayları",
-        "clear_log_btn": "Logu Temizle",
-        "status_ready": "Hazır.",
-        "menu_file": "Dosya",
-        "menu_exit": "Çıkış",
-        "menu_settings": "Ayarlar",
-        "menu_preferences": "Tercihler...",
-        "menu_help": "Yardım",
-        "menu_about": "Hakkında",
-        "settings_title": "Tercihler",
-        "settings_language": "Dil:",
-        "settings_save": "Kaydet",
-        "settings_cancel": "İptal",
-        "settings_restart_note": "Dil değişikliği anında geçerli olur.",
-        "settings_check_updates": "Açılışta güncellemeleri kontrol et",
-        "menu_check_updates": "Güncellemeleri kontrol et",
-        "update_available": "Yeni sürüm var: v{version}  ",
-        "update_install_btn": "Yükle",
-        "update_dismiss_btn": "Yoksay",
-        "update_no_update": "En güncel sürümdesin (v{version}).",
-        "update_check_failed": "Güncelleme kontrolü başarısız.",
-        "update_confirm_title": "Güncellemeyi yükle",
-        "update_confirm_body": (
-            "v{ver} sürümü mevcut (şu an: v{cur}).\n"
-            "İndirilecek boyut: {size}.\n\nŞimdi indirilip kurulsun mu?"
-        ),
-        "update_downloading": "Güncelleme indiriliyor...",
-        "update_apply_ready": (
-            "Yeni sürüm indirildi. Uygulama kapanıp otomatik yeniden "
-            "başlatılacak."
-        ),
-        "update_apply_failed": "Güncelleme uygulanamadı:\n{err}",
-        "update_download_failed": "Güncelleme indirilemedi:\n{err}",
-        "open_in_explorer_btn": "Aç",
-        "recent_folders_label": "Son:",
-        "drop_hint": "İpucu: bir klasörü pencereye sürükleyip bırakabilirsin.",
-        "stats_title": "Düzenleme tamamlandı",
-        "stats_body": (
-            "{total} dosya, {cats} kategori\n"
-            "Toplam boyut: {size}\n"
-            "Süre: {elapsed} s\n"
-            "Hata: {errors}"
-        ),
-        "stats_open_folder": "Klasörü aç",
-        "stats_close": "Kapat",
-        "reclassify_menu": "Kategoriye taşı...",
-        "reclassify_title": "Dosyayı yeniden ata",
-        "reclassify_prompt": "'{name}' hangi kategoriye gitsin?",
-        "settings_destination": "Hedef klasör (opsiyonel):",
-        "settings_destination_hint": (
-            "Belirtilirse düzenlenen dosyalar buraya taşınır, kaynak "
-            "klasörde kalmaz. Boş bırakılırsa kaynak klasörün altında "
-            "düzenlenir."
-        ),
-        "settings_destination_browse": "Gözat...",
-        "settings_destination_clear": "Temizle",
-        "settings_auto_section": "Arka plan modu",
-        "settings_auto_enable": "Zamanlanmış otomatik düzenlemeyi etkinleştir",
-        "settings_auto_folder": "Takip edilecek klasör:",
-        "settings_auto_interval": "Aralık (dakika):",
-        "settings_auto_start_minimized": "Açılışta tepside başlat",
-        "settings_auto_hint": (
-            "Etkinleştirildiğinde uygulama tepside (system tray) kalır ve "
-            "takip edilen klasörü belirtilen aralıkla yeniden düzenler. "
-            "Pencere kapatılınca çıkmaz, tepsiye iner."
-        ),
-        "tray_show": "Pencereyi göster",
-        "tray_pause": "Otomatik düzenlemeyi duraklat",
-        "tray_resume": "Otomatik düzenlemeyi sürdür",
-        "tray_run_now": "Şimdi düzenle",
-        "tray_quit": "Çıkış",
-        "tray_status_idle": "Dosya Düzenleyici — boşta",
-        "tray_status_running": "Dosya Düzenleyici — düzenleniyor...",
-        "tray_status_paused": "Dosya Düzenleyici — duraklatıldı",
-        "tray_notify_done": "{folder} klasöründe {n} dosya düzenlendi",
-        "auto_no_folder_set": (
-            "Otomatik düzenleme etkin ama takip edilecek klasör atanmamış. "
-            "Ayarlardan yapılandır."
-        ),
-        "about_title": "Hakkında",
-        "about_body": (
-            "{app} v{ver}\n\nBağımsız bir dosya düzenleyici.\n"
-            "Tek .exe, kurulum yok."
-        ),
-        "bmc_label": "Projeyi destekle",
-        "pick_folder_first": "Önce bir klasör seç.",
-        "folder_not_found": "Klasör bulunamadı:\n{path}",
-        "confirm_organize": (
-            "{path}\n\nKlasör içindeki dosyalar kategori alt klasörlerine "
-            "taşınacak. Devam edilsin mi?"
-        ),
-        "confirm_undo": (
-            "Son işlem {date} tarihinde {n} dosya taşıdı. Geri alınsın mı?"
-        ),
-        "preview_header": "=== Önizleme: {path} ===",
-        "preview_scanning": "(PDF ve Word dosyaları CV içeriği için taranıyor...)\n",
-        "no_files": "Düzenlenecek dosya yok.",
-        "preview_summary": "Toplam: {total} dosya, {cats} kategori.",
-        "verbose_hint": (
-            "İpucu: Bir dosya yanlış kategoride mi? 'Tanı detayları'nı aç "
-            "ve tekrar Önizle."
-        ),
-        "preview_done": "Önizleme hazır: {n} dosya.",
-        "organize_header": "=== Düzenleniyor: {path} ===",
-        "organize_done_status": "Bitti: {moved} taşındı, {errors} hata.",
-        "organize_done_log": "\nBitti. {moved} dosya taşındı, {errors} hata.",
-        "undo_header": "=== Geri alınıyor: {date} ===",
-        "undo_done": "Geri alındı.",
-        "undo_done_log": "\nGeri alma bitti. {moved} dosya, {errors} hata.",
-        "undo_no_history": "Geri alınacak işlem yok.",
-        "undo_read_error": "Geri-al kütüğü okunamadı:\n{err}",
-        "scanning_progress": "İnceleniyor {i}/{total}: {name}",
-        "error_label": "HATA",
-        "skipped_missing": "ATLANDI (kayıp): {name}",
-        "reason_name": "isim: '{m}'",
-        "reason_camelcase_cv": "isim: CamelCase '{m}'",
-        "reason_ext": "uzantı {ext}",
-        "reason_ext_with_content": "uzantı {ext} ({note})",
-        "reason_ext_no_match": "uzantı eşleşmedi: {ext}",
-        "reason_no_match_with_note": "uzantı eşleşmedi ({note})",
-        "reason_content_strong": "{src} içerik güçlü: {kws}",
-        "reason_content_weak": "{src} içerik zayıf x{n}: {kws}",
-        "reason_content_no_text": "{src} metin yok (taranmış/şifreli olabilir)",
-        "reason_content_not_cv_weak": "{src} CV değil (zayıf x{n}: {kws})",
-        "reason_content_not_cv": "{src} CV değil ({n} karakter, eşleşme yok)",
-        "warn_undo_write_failed": "UYARI: Geri-al kütüğü yazılamadı: {err}",
-        "fatal_error": "\nKRİTİK HATA: {err}",
-        "error_done": "Hata.",
-        "empty_done": "Boş.",
-    },
-}
+LANGUAGES, UI_STRINGS, CATEGORY_NAMES = _load_i18n_bundles()
+if DEFAULT_LANG not in LANGUAGES:
+    # Defensive: ensure we always have an English fallback even if the
+    # bundled JSON is missing or unreadable. Tk messageboxes don't really
+    # work pre-mainloop, so we just print a hint and continue with an
+    # empty dict — the I18N class will then echo keys back as text.
+    print("WARNING: no English translation bundle found at resources/i18n/",
+          file=sys.stderr)
+    LANGUAGES.setdefault(DEFAULT_LANG, "English")
+    UI_STRINGS.setdefault(DEFAULT_LANG, {})
+    CATEGORY_NAMES.setdefault(DEFAULT_LANG, {})
 
 
 class I18N:
@@ -543,83 +337,8 @@ def apply_update(asset_url: str, on_progress=None) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Category definitions
-#
-# Internal keys are stable across languages. Localized display names are
-# defined per-language; the on-disk folder is named in the active language.
-# ---------------------------------------------------------------------------
 
-CATEGORY_NAMES = {
-    "en": {
-        "cv": "CV",
-        "invoices": "Invoices",
-        "payroll": "Payroll",
-        "bank": "Bank",
-        "tax": "Tax",
-        "telecom": "Telecom",
-        "insurance": "Insurance",
-        "contracts": "Contracts",
-        "housing": "Housing",
-        "tickets": "Tickets",
-        "visa": "Visa",
-        "official": "Official Documents",
-        "exams": "Exams",
-        "manuals": "Manuals",
-        "returns": "Returns",
-        "logs": "Logs",
-        "vehicles": "Vehicles",
-        "screenshots": "Screenshots",
-        "installers": "Installers",
-        "documents": "Documents",
-        "spreadsheets": "Spreadsheets",
-        "presentations": "Presentations",
-        "images": "Images",
-        "videos": "Videos",
-        "music": "Music",
-        "archives": "Archives",
-        "code": "Code",
-        "fonts": "Fonts",
-        "disk_images": "Disk Images",
-        "torrents": "Torrents",
-        "other": "Other",
-    },
-    "tr": {
-        "cv": "CV",
-        "invoices": "Faturalar",
-        "payroll": "Bordro",
-        "bank": "Banka",
-        "tax": "Vergi",
-        "telecom": "Telekom",
-        "insurance": "Sigorta",
-        "contracts": "Sözleşme",
-        "housing": "Konut",
-        "tickets": "Bilet",
-        "visa": "Vize",
-        "official": "Resmi Belge",
-        "exams": "Sınav",
-        "manuals": "Kılavuz",
-        "returns": "İade",
-        "logs": "Loglar",
-        "vehicles": "Araç",
-        "screenshots": "Ekran Görüntüleri",
-        "installers": "Kurulum",
-        "documents": "Belgeler",
-        "spreadsheets": "Tablolar",
-        "presentations": "Sunumlar",
-        "images": "Resimler",
-        "videos": "Videolar",
-        "music": "Müzik",
-        "archives": "Arşivler",
-        "code": "Kod",
-        "fonts": "Yazı Tipleri",
-        "disk_images": "Disk Kalıbı",
-        "torrents": "Torrent",
-        "other": "Diğer",
-    },
-}
-
-
+# Category display names come from resources/i18n/<lang>.json.
 def category_display(key: str, lang: str | None = None) -> str:
     """Localized folder/display name for an internal category key."""
     lang = lang or i18n.lang
@@ -679,39 +398,8 @@ def _maybe_despace(text: str) -> str:
     return out.replace(placeholder, " ")
 
 
-_CV_STRONG_RAW = ("curriculum vitae", "özgeçmiş", "resume", "résumé")
-
-_CV_WEAK_RAW = (
-    # English headers commonly found in CVs
-    "work experience", "professional experience", "employment history",
-    "education", "academic background", "educational background",
-    "skills", "technical skills", "soft skills", "core competencies",
-    "references", "professional references",
-    "certificates", "certifications", "certification", "certified",
-    "career objective", "professional summary", "personal summary",
-    "contact information", "contact details",
-    "languages", "language proficiency", "language skills",
-    "personal information", "personal details", "personal profile",
-    "projects", "publications",
-    "date of birth", "place of birth", "nationality",
-    "hobbies", "interests",
-    "linkedin.com/in/", "github.com/",
-    # Turkish headers
-    "iş deneyimi", "çalışma deneyimi", "iş tecrübesi", "iş hayatı",
-    "deneyim", "tecrübe",
-    "eğitim", "eğitim bilgileri", "öğrenim", "öğrenim durumu",
-    "yetenekler", "yetkinlikler", "beceriler", "yetkinlik",
-    "referanslar", "referans",
-    "sertifikalar", "sertifika", "sertifikalarım",
-    "kişisel bilgiler", "iletişim bilgileri", "iletişim",
-    "diller", "yabancı dil", "yabancı diller", "dil bilgisi",
-    "projeler", "yayınlar",
-    "kariyer hedefi", "kariyer", "kariyer özeti",
-    "doğum tarihi", "doğum yeri", "uyruğu", "medeni durum",
-    "hobiler", "ilgi alanları", "ilgi alanlarım",
-    "hakkımda", "özet", "profil",
-)
-
+# CV detection keyword lists come from resources/data/cv_keywords.json.
+_CV_STRONG_RAW, _CV_WEAK_RAW = _load_cv_keywords()
 _CV_STRONG = tuple(_normalize(k) for k in _CV_STRONG_RAW)
 _CV_WEAK = tuple(_normalize(k) for k in _CV_WEAK_RAW)
 
@@ -897,33 +585,12 @@ NAME_RULES: list[tuple[re.Pattern, str]] = [
 ]
 
 
-EXT_RULES = {
-    "documents": {".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".md",
-                  ".tex", ".epub", ".mobi", ".azw3", ".pages"},
-    "spreadsheets": {".xls", ".xlsx", ".csv", ".ods", ".tsv", ".numbers"},
-    "presentations": {".ppt", ".pptx", ".odp", ".key"},
-    "images": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff",
-               ".tif", ".svg", ".heic", ".ico", ".psd", ".ai", ".raw",
-               ".cr2", ".nef"},
-    "videos": {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
-               ".m4v", ".mpg", ".mpeg", ".3gp"},
-    "music": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma",
-              ".opus", ".aiff"},
-    "archives": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz"},
-    "installers": {".exe", ".msi", ".msix", ".appx", ".appxbundle"},
-    "code": {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css",
-             ".scss", ".java", ".kt", ".cpp", ".c", ".h", ".hpp", ".cs",
-             ".go", ".rs", ".rb", ".php", ".swift", ".sh", ".ps1", ".bat",
-             ".cmd", ".json", ".xml", ".yml", ".yaml", ".toml", ".ini",
-             ".sql", ".lua", ".gd"},
-    "fonts": {".ttf", ".otf", ".woff", ".woff2"},
-    "disk_images": {".iso", ".img", ".dmg", ".vhd", ".vmdk"},
-    "torrents": {".torrent"},
-}
+# Extension-to-category mappings come from resources/data/extensions.json.
+EXT_RULES = _load_extensions()
 
 
-SKIP_NAMES = {UNDO_LOG_NAME, "desktop.ini", "Thumbs.db", "thumbs.db",
-              "$RECYCLE.BIN"}
+# Names skipped during folder scans — sourced from resources/data/skip_names.json.
+SKIP_NAMES = _load_skip_names() | {UNDO_LOG_NAME}
 
 
 def classify_detailed(path: Path, inspect_content: bool = True

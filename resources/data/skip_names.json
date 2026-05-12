@@ -1,0 +1,10 @@
+{
+  "_comment": "Files matching these exact names are skipped when scanning a folder. Hidden files (dot-prefixed) are skipped automatically.",
+  "names": [
+    ".file-organizer-undo.json",
+    "desktop.ini",
+    "Thumbs.db",
+    "thumbs.db",
+    "$RECYCLE.BIN"
+  ]
+}
