@@ -20,8 +20,6 @@ class AppState(QObject):
     profiles_changed = Signal()
     active_profile_changed = Signal()
     folder_changed = Signal(object)        # Path | None
-    plan_ready = Signal(list)              # list[PlannedMove]
-    organize_finished = Signal(object)     # OrganizeResult
     theme_changed = Signal(str)            # "dark" or "light"
     language_changed = Signal(str)         # ISO code
 

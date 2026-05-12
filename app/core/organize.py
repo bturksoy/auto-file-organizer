@@ -28,9 +28,6 @@ class PlannedMove:
     reason: str
     is_copy: bool = False
 
-    def to_display(self, profile: Profile) -> str:
-        return self.dst.parent.name or "?"
-
 
 @dataclass
 class OrganizeResult:

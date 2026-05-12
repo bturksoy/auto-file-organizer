@@ -16,9 +16,19 @@ NAV_ITEMS = [
     ("profiles", "\U0001F464  Profiles"),
 ]
 
-FOOTER_ITEMS = [
+# Footer entries that do not switch pages (about, etc.). They emit
+# the same `selected` signal so MainWindow can route them through a
+# different handler.
+FOOTER_PAGE_ITEMS = [
     ("settings", "⚙  Settings"),
 ]
+
+FOOTER_ACTION_ITEMS = [
+    ("about", "ⓘ  About"),
+]
+
+# Backwards-compat alias still consulted by older callers.
+FOOTER_ITEMS = FOOTER_PAGE_ITEMS
 
 
 class Sidebar(QFrame):
@@ -51,11 +61,23 @@ class Sidebar(QFrame):
         layout.addItem(
             QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        for key, label in FOOTER_ITEMS:
+        for key, label in FOOTER_PAGE_ITEMS:
             btn = self._make_nav_button(key, label)
+            layout.addWidget(btn)
+        for key, label in FOOTER_ACTION_ITEMS:
+            btn = self._make_action_button(key, label)
             layout.addWidget(btn)
 
         layout.addSpacing(8)
+
+    def _make_action_button(self, key: str, label: str) -> QPushButton:
+        """Footer entry that fires `selected(key)` but isn't a checkable nav."""
+        btn = QPushButton(label)
+        btn.setObjectName("navItem")
+        btn.setCheckable(False)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda _=False, k=key: self.selected.emit(k))
+        return btn
 
     def _make_nav_button(self, key: str, label: str) -> QPushButton:
         btn = QPushButton(label)

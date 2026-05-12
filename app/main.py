@@ -83,7 +83,7 @@ def _prompt_update(parent, info: dict, state: AppState,
         f"Download size: {human_size(info['size'])}.\n\nInstall now?"
     )
     install_btn = box.addButton("Install", QMessageBox.AcceptRole)
-    later_btn = box.addButton("Later", QMessageBox.RejectRole)
+    box.addButton("Later", QMessageBox.RejectRole)
     dismiss_btn = box.addButton("Skip this version", QMessageBox.DestructiveRole)
     box.exec()
 

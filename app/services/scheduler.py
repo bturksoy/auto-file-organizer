@@ -42,15 +42,12 @@ class Scheduler(QObject):
         self._stop.set()
 
     def toggle_pause(self) -> bool:
+        """Flip the pause flag. Returns the new paused state."""
         if self._pause.is_set():
             self._pause.clear()
             return False
         self._pause.set()
         return True
-
-    @property
-    def paused(self) -> bool:
-        return self._pause.is_set()
 
     def run_now(self) -> None:
         threading.Thread(target=self._run_one_pass, daemon=True).start()

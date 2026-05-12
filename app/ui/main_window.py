@@ -4,13 +4,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
     QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from app.core.state import AppState
+from app.services.updates import APP_VERSION
+from app.ui.dialogs.about import AboutDialog
 from app.ui.pages.categories import CategoriesPage
 from app.ui.pages.folders import FoldersPage
 from app.ui.pages.home import HomePage
@@ -92,6 +94,47 @@ class MainWindow(QMainWindow):
         self.sidebar.selected.connect(self._on_nav)
         self.sidebar.select("home")
 
+        self._install_shortcuts()
+
+    # ----- keyboard shortcuts -----------------------------------------------
+
+    def _install_shortcuts(self) -> None:
+        """Page-switch shortcuts (Ctrl+1..6), Help (F1), and theme toggle."""
+        nav_keys = [
+            ("Ctrl+1", "home"),
+            ("Ctrl+2", "folders"),
+            ("Ctrl+3", "rules"),
+            ("Ctrl+4", "categories"),
+            ("Ctrl+5", "profiles"),
+            ("Ctrl+6", "settings"),
+        ]
+        for seq, key in nav_keys:
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.activated.connect(lambda k=key: self.sidebar.select(k))
+
+        about_sc = QShortcut(QKeySequence("F1"), self)
+        about_sc.activated.connect(self._show_about)
+
+        theme_sc = QShortcut(QKeySequence("Ctrl+T"), self)
+        theme_sc.activated.connect(self._toggle_theme)
+
+    def _toggle_theme(self) -> None:
+        current = self._state.data.theme
+        self._state.set_theme("light" if current == "dark" else "dark")
+
+    def _show_about(self) -> None:
+        from app.main import app_icon
+        icon = app_icon()
+        # The icon QIcon doesn't give us a pixmap path; resolve via the
+        # bundled file directly so the dialog can show a large preview.
+        from app.main import _resources_dir
+        png = _resources_dir() / "icon.png"
+        AboutDialog(
+            icon_path=str(png) if png.is_file() else None,
+            version=APP_VERSION,
+            parent=self,
+        ).exec()
+
     def _build_top_bar(self) -> QFrame:
         bar = QFrame()
         bar.setObjectName("topBar")
@@ -139,6 +182,11 @@ class MainWindow(QMainWindow):
             self._status_mode.setText("")
 
     def _on_nav(self, key: str) -> None:
+        # The sidebar emits page keys and a couple of action keys (About).
+        # Action keys aren't in the stack, so route them separately.
+        if key == "about":
+            self._show_about()
+            return
         page = self._pages.get(key)
         if page is not None:
             self._stack.setCurrentWidget(page)
