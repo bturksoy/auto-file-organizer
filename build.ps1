@@ -26,6 +26,7 @@ Write-Host "Building exe..." -ForegroundColor Cyan
 $args = @(
     "--onefile", "--windowed", "--name", "FileOrganizer",
     "--noconfirm", "--clean",
+    "--icon", "resources/icon.ico",
     "--add-data", "resources;resources",
     "--hidden-import", "truststore",
     "--hidden-import", "certifi",

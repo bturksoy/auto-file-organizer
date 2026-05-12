@@ -1,10 +1,23 @@
-# Auto File Organizer
+<p align="center">
+  <img src="docs/branding/banner.png" alt="Auto File Organizer" width="100%">
+</p>
 
-A standalone Windows desktop app that organizes folders into category
-subfolders. Rules, categories, and profiles are all editable from the UI —
-no JSON wrangling required.
+<p align="center">
+  <strong>A standalone Windows desktop app that organizes folders into category subfolders.</strong><br>
+  Rules, categories, and profiles are all editable from the UI — no JSON wrangling required.
+</p>
 
-Built with PySide6 (Qt 6). Single-file `.exe`, no installation.
+<p align="center">
+  <a href="../../releases/latest">
+    <img alt="Download" src="https://img.shields.io/badge/Download-FileOrganizer.exe-7c8cff?style=for-the-badge">
+  </a>
+  <img alt="Built with PySide6" src="https://img.shields.io/badge/Built%20with-PySide6-41cd52?style=for-the-badge">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
+</p>
+
+---
+
+## Overview
 
 ![Home](docs/screenshots/v2-home.png)
 

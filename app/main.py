@@ -9,8 +9,10 @@ import os
 import sys
 import threading
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app.core.state import AppState
@@ -22,6 +24,25 @@ from app.services.updates import (
 )
 from app.ui.main_window import MainWindow
 from app.ui.theme import STYLESHEET
+
+
+def _resources_dir() -> Path:
+    """Same lookup the rest of the app uses for bundled files."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "resources"
+    return Path(__file__).resolve().parent.parent / "resources"
+
+
+def app_icon() -> QIcon:
+    """Load the app icon (cat in folder) from bundled resources."""
+    candidates = [
+        _resources_dir() / "icon.ico",
+        _resources_dir() / "icon.png",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return QIcon(str(path))
+    return QIcon()
 
 
 class _UpdateBridge(QObject):
@@ -95,11 +116,17 @@ def main() -> int:
     app.setFont(QFont("Segoe UI", 9))
     app.setStyleSheet(STYLESHEET)
 
+    icon = app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
+
     state = AppState()
     window = MainWindow(state)
+    if not icon.isNull():
+        window.setWindowIcon(icon)
 
     # ----- Tray + scheduler -----
-    tray = TrayController(window)
+    tray = TrayController(window, icon=icon if not icon.isNull() else None)
     scheduler = Scheduler(state)
 
     def update_tray_visibility():

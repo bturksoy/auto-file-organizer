@@ -12,9 +12,10 @@ class TrayController(QObject):
     toggle_pause_requested = Signal()
     quit_requested = Signal()
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, icon: QIcon | None = None) -> None:
         super().__init__(parent)
-        self._icon = QSystemTrayIcon(self._make_icon(), parent)
+        tray_icon = icon if icon and not icon.isNull() else self._make_icon()
+        self._icon = QSystemTrayIcon(tray_icon, parent)
         self._icon.setToolTip("Auto File Organizer")
 
         menu = QMenu()
