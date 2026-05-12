@@ -1,25 +1,24 @@
+"""Launch the app with a sample folder and run a Preview automatically.
+
+Used to generate the README screenshots. Picks the language from the saved
+settings, so re-running this after switching languages produces a localized
+screenshot.
 """
-Launches OrganizerApp with a sample folder pre-set and Preview already run,
-so we can capture a screenshot showing the categorization output.
-"""
-import os
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 sys.path.insert(0, r"C:\Users\Burhan\file-organizer")
 import tkinter as tk
-from organizer import OrganizerApp
+from organizer import OrganizerApp, load_settings
 
-# Build a sample folder with files that exercise multiple categories.
 sample_root = Path(tempfile.mkdtemp(prefix="fo_demo_"))
 sample_files = [
-    "Burhan_CV_2024.pdf",
-    "LinkteraCV_AyseDemir.docx",
+    "Jane_CV_2024.pdf",
+    "AcmeCV_Doe.docx",
     "Fatura-2024-03.pdf",
-    "BURHAN_TURKSOY_BORDRO.pdf",
-    "Enpara.com dekontunuz.pdf",
+    "BORDRO_2024_07.pdf",
+    "Bank_dekont.pdf",
     "Mietvertrag_apartment.pdf",
     "Ibraname.pdf",
     "Visum Letter.pdf",
@@ -36,18 +35,17 @@ sample_files = [
     "main.py",
     "Screenshot 2024-01-15.png",
     "Setup_Chrome.exe",
-    "rapor.docx",
+    "report.docx",
     "028-random-id.pdf",
 ]
-for n in sample_files:
-    (sample_root / n).write_bytes(b"x")
+for name in sample_files:
+    (sample_root / name).write_bytes(b"x")
 
+settings = load_settings()
 root = tk.Tk()
-app = OrganizerApp(root)
+app = OrganizerApp(root, settings)
 app.folder_var.set(str(sample_root))
 app.verbose_var.set(False)
-# Trigger preview immediately (next tick so the app is fully constructed)
 root.after(200, app._preview)
-# Resize a bit for nicer screenshot
-root.geometry("900x640")
+root.geometry("920x660")
 root.mainloop()

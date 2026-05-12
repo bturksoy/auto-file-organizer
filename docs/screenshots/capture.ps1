@@ -3,7 +3,8 @@
 
 param(
     [string]$OutPath = "$PSScriptRoot\main-window.png",
-    [int]$PreferIndex = 0  # if multiple FileOrganizer instances, which to use
+    [int]$PreferIndex = 0,
+    [string]$TitleLike = ""  # restrict to matching MainWindowTitle
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -28,7 +29,14 @@ public class Win32 {
 "@ -ErrorAction SilentlyContinue
 
 $candidates = Get-Process |
-    Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like '*Dosya D*zenleyici*' } |
+    Where-Object {
+        $_.MainWindowHandle -ne 0 -and (
+            $_.MainWindowTitle -like 'File Organizer*' -or
+            $_.MainWindowTitle -like '*Dosya D*zenleyici*'
+        ) -and (
+            $TitleLike -eq "" -or $_.MainWindowTitle -like $TitleLike
+        )
+    } |
     Sort-Object StartTime -Descending
 
 if (-not $candidates) {

@@ -1,38 +1,356 @@
+"""File Organizer — sort a folder's files into category subfolders.
+
+Single-file Tk application. Categorization combines filename patterns with
+optional PDF/DOCX text inspection for CV detection. Built to be packaged as a
+standalone Windows executable via PyInstaller --onefile.
 """
-Dosya Düzenleyici — Windows klasör organizasyon aracı.
-Kurulum gerektirmez; PyInstaller ile tek dosya exe olarak paketlenir.
-"""
+from __future__ import annotations
+
 import functools
 import json
 import logging
+import os
 import queue
 import re
 import shutil
+import sys
 import threading
 import tkinter as tk
 import unicodedata
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from tkinter import END, filedialog, messagebox, ttk
 
-APP_TITLE = "Dosya Düzenleyici"
+APP_NAME = "File Organizer"
+APP_VERSION = "1.1.0"
 UNDO_LOG_NAME = ".file-organizer-undo.json"
+BMC_URL = "https://buymeacoffee.com/bturksoy"
+DEFAULT_LANG = "en"
 
-# pypdf bozuk PDF'ler için bol uyarı basıyor; --windowed modunda konsol yok
-# ama yine de stderr'i kirletiyor. Kapat.
+# pypdf is noisy about malformed streams. We don't want to crash on it.
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
-def _normalize(s: str) -> str:
+# ---------------------------------------------------------------------------
+# Settings persistence
+# ---------------------------------------------------------------------------
+
+def _config_path() -> Path:
+    base = os.environ.get("APPDATA") or str(Path.home() / ".config")
+    return Path(base) / "FileOrganizer" / "settings.json"
+
+
+def load_settings() -> dict:
+    path = _config_path()
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_settings(data: dict) -> None:
+    path = _config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError:
+        # If we can't write settings, the app should still run.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Internationalization
+# ---------------------------------------------------------------------------
+
+LANGUAGES = {"en": "English", "tr": "Türkçe"}
+
+UI_STRINGS = {
+    "en": {
+        "app_title": "File Organizer",
+        "folder_label": "Folder:",
+        "browse_btn": "Browse...",
+        "preview_btn": "Preview",
+        "organize_btn": "Organize",
+        "undo_btn": "Undo",
+        "verbose_check": "Diagnostic details",
+        "clear_log_btn": "Clear log",
+        "status_ready": "Ready.",
+        "menu_file": "File",
+        "menu_exit": "Exit",
+        "menu_settings": "Settings",
+        "menu_preferences": "Preferences...",
+        "menu_help": "Help",
+        "menu_about": "About",
+        "settings_title": "Preferences",
+        "settings_language": "Language:",
+        "settings_save": "Save",
+        "settings_cancel": "Cancel",
+        "settings_restart_note": "Language change takes effect immediately.",
+        "about_title": "About",
+        "about_body": (
+            "{app} v{ver}\n\nA standalone file organizer.\n"
+            "Single .exe, no installation."
+        ),
+        "bmc_label": "Support the project",
+        "pick_folder_first": "Pick a folder first.",
+        "folder_not_found": "Folder not found:\n{path}",
+        "confirm_organize": (
+            "{path}\n\nFiles in this folder will be moved into category "
+            "subfolders. Continue?"
+        ),
+        "confirm_undo": (
+            "The last operation moved {n} file(s) on {date}. Undo it?"
+        ),
+        "preview_header": "=== Preview: {path} ===",
+        "preview_scanning": (
+            "(Scanning PDF and Word documents for CV content...)\n"
+        ),
+        "no_files": "Nothing to organize.",
+        "preview_summary": "Total: {total} files, {cats} categories.",
+        "verbose_hint": (
+            "Tip: a file in the wrong category? Tick 'Diagnostic details' "
+            "and re-run Preview."
+        ),
+        "preview_done": "Preview ready: {n} files.",
+        "organize_header": "=== Organizing: {path} ===",
+        "organize_done_status": "Done: {moved} moved, {errors} errors.",
+        "organize_done_log": "\nDone. {moved} file(s) moved, {errors} error(s).",
+        "undo_header": "=== Undoing: {date} ===",
+        "undo_done": "Undo complete.",
+        "undo_done_log": (
+            "\nUndo complete. {moved} restored, {errors} error(s)."
+        ),
+        "undo_no_history": "Nothing to undo.",
+        "undo_read_error": "Could not read undo log:\n{err}",
+        "scanning_progress": "Scanning {i}/{total}: {name}",
+        "error_label": "ERROR",
+        "skipped_missing": "SKIPPED (missing): {name}",
+        "reason_name": "name: '{m}'",
+        "reason_camelcase_cv": "name: CamelCase '{m}'",
+        "reason_ext": "ext {ext}",
+        "reason_ext_with_content": "ext {ext} ({note})",
+        "reason_ext_no_match": "no extension match: {ext}",
+        "reason_no_match_with_note": "no extension match ({note})",
+        "reason_content_strong": "{src} content strong: {kws}",
+        "reason_content_weak": "{src} content weak x{n}: {kws}",
+        "reason_content_no_text": "{src} no text (scanned or encrypted)",
+        "reason_content_not_cv_weak": "{src} not a CV (weak x{n}: {kws})",
+        "reason_content_not_cv": "{src} not a CV ({n} chars, no match)",
+        "warn_undo_write_failed": "WARNING: could not write undo log: {err}",
+        "fatal_error": "\nFATAL ERROR: {err}",
+        "error_done": "Error.",
+        "empty_done": "Empty.",
+    },
+    "tr": {
+        "app_title": "Dosya Düzenleyici",
+        "folder_label": "Klasör:",
+        "browse_btn": "Gözat...",
+        "preview_btn": "Önizle",
+        "organize_btn": "Düzenle",
+        "undo_btn": "Geri Al",
+        "verbose_check": "Tanı detayları",
+        "clear_log_btn": "Logu Temizle",
+        "status_ready": "Hazır.",
+        "menu_file": "Dosya",
+        "menu_exit": "Çıkış",
+        "menu_settings": "Ayarlar",
+        "menu_preferences": "Tercihler...",
+        "menu_help": "Yardım",
+        "menu_about": "Hakkında",
+        "settings_title": "Tercihler",
+        "settings_language": "Dil:",
+        "settings_save": "Kaydet",
+        "settings_cancel": "İptal",
+        "settings_restart_note": "Dil değişikliği anında geçerli olur.",
+        "about_title": "Hakkında",
+        "about_body": (
+            "{app} v{ver}\n\nBağımsız bir dosya düzenleyici.\n"
+            "Tek .exe, kurulum yok."
+        ),
+        "bmc_label": "Projeyi destekle",
+        "pick_folder_first": "Önce bir klasör seç.",
+        "folder_not_found": "Klasör bulunamadı:\n{path}",
+        "confirm_organize": (
+            "{path}\n\nKlasör içindeki dosyalar kategori alt klasörlerine "
+            "taşınacak. Devam edilsin mi?"
+        ),
+        "confirm_undo": (
+            "Son işlem {date} tarihinde {n} dosya taşıdı. Geri alınsın mı?"
+        ),
+        "preview_header": "=== Önizleme: {path} ===",
+        "preview_scanning": "(PDF ve Word dosyaları CV içeriği için taranıyor...)\n",
+        "no_files": "Düzenlenecek dosya yok.",
+        "preview_summary": "Toplam: {total} dosya, {cats} kategori.",
+        "verbose_hint": (
+            "İpucu: Bir dosya yanlış kategoride mi? 'Tanı detayları'nı aç "
+            "ve tekrar Önizle."
+        ),
+        "preview_done": "Önizleme hazır: {n} dosya.",
+        "organize_header": "=== Düzenleniyor: {path} ===",
+        "organize_done_status": "Bitti: {moved} taşındı, {errors} hata.",
+        "organize_done_log": "\nBitti. {moved} dosya taşındı, {errors} hata.",
+        "undo_header": "=== Geri alınıyor: {date} ===",
+        "undo_done": "Geri alındı.",
+        "undo_done_log": "\nGeri alma bitti. {moved} dosya, {errors} hata.",
+        "undo_no_history": "Geri alınacak işlem yok.",
+        "undo_read_error": "Geri-al kütüğü okunamadı:\n{err}",
+        "scanning_progress": "İnceleniyor {i}/{total}: {name}",
+        "error_label": "HATA",
+        "skipped_missing": "ATLANDI (kayıp): {name}",
+        "reason_name": "isim: '{m}'",
+        "reason_camelcase_cv": "isim: CamelCase '{m}'",
+        "reason_ext": "uzantı {ext}",
+        "reason_ext_with_content": "uzantı {ext} ({note})",
+        "reason_ext_no_match": "uzantı eşleşmedi: {ext}",
+        "reason_no_match_with_note": "uzantı eşleşmedi ({note})",
+        "reason_content_strong": "{src} içerik güçlü: {kws}",
+        "reason_content_weak": "{src} içerik zayıf x{n}: {kws}",
+        "reason_content_no_text": "{src} metin yok (taranmış/şifreli olabilir)",
+        "reason_content_not_cv_weak": "{src} CV değil (zayıf x{n}: {kws})",
+        "reason_content_not_cv": "{src} CV değil ({n} karakter, eşleşme yok)",
+        "warn_undo_write_failed": "UYARI: Geri-al kütüğü yazılamadı: {err}",
+        "fatal_error": "\nKRİTİK HATA: {err}",
+        "error_done": "Hata.",
+        "empty_done": "Boş.",
+    },
+}
+
+
+class I18N:
+    """Tiny translation lookup with a default-language fallback."""
+
+    def __init__(self, lang: str = DEFAULT_LANG) -> None:
+        self._lang = lang if lang in UI_STRINGS else DEFAULT_LANG
+
+    @property
+    def lang(self) -> str:
+        return self._lang
+
+    def set_language(self, lang: str) -> None:
+        if lang in UI_STRINGS:
+            self._lang = lang
+
+    def t(self, key: str, **kwargs) -> str:
+        table = UI_STRINGS.get(self._lang, UI_STRINGS[DEFAULT_LANG])
+        text = table.get(key) or UI_STRINGS[DEFAULT_LANG].get(key, key)
+        return text.format(**kwargs) if kwargs else text
+
+
+i18n = I18N()
+
+
+# ---------------------------------------------------------------------------
+# Category definitions
+#
+# Internal keys are stable across languages. Localized display names are
+# defined per-language; the on-disk folder is named in the active language.
+# ---------------------------------------------------------------------------
+
+CATEGORY_NAMES = {
+    "en": {
+        "cv": "CV",
+        "invoices": "Invoices",
+        "payroll": "Payroll",
+        "bank": "Bank",
+        "tax": "Tax",
+        "telecom": "Telecom",
+        "insurance": "Insurance",
+        "contracts": "Contracts",
+        "housing": "Housing",
+        "tickets": "Tickets",
+        "visa": "Visa",
+        "official": "Official Documents",
+        "exams": "Exams",
+        "manuals": "Manuals",
+        "returns": "Returns",
+        "logs": "Logs",
+        "vehicles": "Vehicles",
+        "screenshots": "Screenshots",
+        "installers": "Installers",
+        "documents": "Documents",
+        "spreadsheets": "Spreadsheets",
+        "presentations": "Presentations",
+        "images": "Images",
+        "videos": "Videos",
+        "music": "Music",
+        "archives": "Archives",
+        "code": "Code",
+        "fonts": "Fonts",
+        "disk_images": "Disk Images",
+        "torrents": "Torrents",
+        "other": "Other",
+    },
+    "tr": {
+        "cv": "CV",
+        "invoices": "Faturalar",
+        "payroll": "Bordro",
+        "bank": "Banka",
+        "tax": "Vergi",
+        "telecom": "Telekom",
+        "insurance": "Sigorta",
+        "contracts": "Sözleşme",
+        "housing": "Konut",
+        "tickets": "Bilet",
+        "visa": "Vize",
+        "official": "Resmi Belge",
+        "exams": "Sınav",
+        "manuals": "Kılavuz",
+        "returns": "İade",
+        "logs": "Loglar",
+        "vehicles": "Araç",
+        "screenshots": "Ekran Görüntüleri",
+        "installers": "Kurulum",
+        "documents": "Belgeler",
+        "spreadsheets": "Tablolar",
+        "presentations": "Sunumlar",
+        "images": "Resimler",
+        "videos": "Videolar",
+        "music": "Müzik",
+        "archives": "Arşivler",
+        "code": "Kod",
+        "fonts": "Yazı Tipleri",
+        "disk_images": "Disk Kalıbı",
+        "torrents": "Torrent",
+        "other": "Diğer",
+    },
+}
+
+
+def category_display(key: str, lang: str | None = None) -> str:
+    """Localized folder/display name for an internal category key."""
+    lang = lang or i18n.lang
+    return CATEGORY_NAMES.get(lang, CATEGORY_NAMES["en"]).get(key, key)
+
+
+def all_category_names_for_lang(lang: str) -> set[str]:
+    return set(CATEGORY_NAMES.get(lang, CATEGORY_NAMES["en"]).values())
+
+
+def all_known_category_names() -> set[str]:
+    """Every localized name across every supported language.
+
+    Used when walking a folder so we never recurse into a previously created
+    category subfolder, regardless of the language it was created in.
     """
-    Türkçe büyük/küçük harf ve aksan farkını yok say.
-    'ÖZGEÇMİŞ', 'özgeçmiş', 'ozgecmis' → hepsi 'ozgecmis' olur.
-    Önemli kararlar:
-    - Python'un 'İ'.lower() 'i + U+0307 combining dot' üretir; NFD + Mn
-      strip ile combining dot'u sileriz ('İ' → 'i').
-    - Türkçe dotless 'ı' (U+0131) standalone bir harf, NFD onu çözmez;
-      bu yüzden 'i'ye katlamak için açıkça replace ediyoruz.
-      ('Kılavuz' → 'kilavuz' böylece 'kilavuz' anahtar kelimesiyle eşleşir.)
+    names: set[str] = set()
+    for lang in CATEGORY_NAMES:
+        names |= all_category_names_for_lang(lang)
+    return names
+
+
+# ---------------------------------------------------------------------------
+# Text normalization and CV-content detection
+# ---------------------------------------------------------------------------
+
+def _normalize(s: str) -> str:
+    """Lowercase, strip diacritics, fold dotless ı to i.
+
+    The dotless ı (U+0131) is a standalone letter rather than a combining
+    sequence, so NFD does not decompose it. We fold it explicitly so that
+    Turkish filenames like 'Kılavuz' match the keyword 'kilavuz'.
     """
     s = unicodedata.normalize("NFD", s.casefold())
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
@@ -40,37 +358,30 @@ def _normalize(s: str) -> str:
 
 
 def _maybe_despace(text: str) -> str:
-    """
-    Bazı PDF'ler (Canva, Figma, vs. ile yapılmış) her harfi ayrı text
-    objesi olarak render eder; pypdf de aralarına boşluk koyar:
-    "W o r k  E x p e r i e n c e"
-    Bunu tespit edip toparlıyoruz. Eğer token'ların %40+'sı tek harfse,
-    tek boşlukları (harfler arası) silip çift boşlukları (kelimeler arası)
-    tek boşluğa indiriyoruz.
+    """Repair PDF text that was rendered character-by-character.
+
+    Some PDFs (commonly those exported from Canva/Figma) place each glyph as
+    its own text object. Most extractors then emit one space between every
+    character: "W o r k  E x p e r i e n c e". We detect that pattern via
+    the ratio of single-character tokens and collapse the inter-character
+    spaces while preserving word breaks (double spaces).
     """
     tokens = text.split()
     if len(tokens) < 10:
         return text
-    single_char_ratio = sum(1 for t in tokens if len(t) == 1) / len(tokens)
-    if single_char_ratio < 0.4:
+    single = sum(1 for tok in tokens if len(tok) == 1) / len(tokens)
+    if single < 0.4:
         return text
-    # Çift+ boşlukları placeholder ile koru, tek boşlukları sil, geri al.
-    out = re.sub(r"  +", "\x00", text)
+    placeholder = "\x00"
+    out = re.sub(r"  +", placeholder, text)
     out = out.replace(" ", "")
-    return out.replace("\x00", " ")
+    return out.replace(placeholder, " ")
 
 
-# CV içerik tespiti için anahtar kelimeler. _normalize'a benziyor;
-# karşılaştırma sırasında her ikisi de normalize edilir.
-_CV_STRONG_RAW = (
-    "curriculum vitae",
-    "özgeçmiş",
-    "resume",
-    "résumé",
-)
+_CV_STRONG_RAW = ("curriculum vitae", "özgeçmiş", "resume", "résumé")
 
 _CV_WEAK_RAW = (
-    # English başlıklar
+    # English headers commonly found in CVs
     "work experience", "professional experience", "employment history",
     "education", "academic background", "educational background",
     "skills", "technical skills", "soft skills", "core competencies",
@@ -84,7 +395,7 @@ _CV_WEAK_RAW = (
     "date of birth", "place of birth", "nationality",
     "hobbies", "interests",
     "linkedin.com/in/", "github.com/",
-    # Türkçe başlıklar
+    # Turkish headers
     "iş deneyimi", "çalışma deneyimi", "iş tecrübesi", "iş hayatı",
     "deneyim", "tecrübe",
     "eğitim", "eğitim bilgileri", "öğrenim", "öğrenim durumu",
@@ -100,47 +411,47 @@ _CV_WEAK_RAW = (
     "hakkımda", "özet", "profil",
 )
 
-_CV_STRONG = tuple(_normalize(kw) for kw in _CV_STRONG_RAW)
-_CV_WEAK = tuple(_normalize(kw) for kw in _CV_WEAK_RAW)
+_CV_STRONG = tuple(_normalize(k) for k in _CV_STRONG_RAW)
+_CV_WEAK = tuple(_normalize(k) for k in _CV_WEAK_RAW)
 
 
 def _read_pdf_text(path: Path, max_pages: int = 4) -> str:
-    """İlk birkaç sayfadan metin çıkar. Hata olursa boş döner."""
+    """Extract text from the first few pages. Returns '' on any failure."""
     try:
         from pypdf import PdfReader
         reader = PdfReader(str(path), strict=False)
         if reader.is_encrypted:
             return ""
-        chunks = []
+        parts = []
         for page in reader.pages[:max_pages]:
             try:
-                chunks.append(page.extract_text() or "")
+                parts.append(page.extract_text() or "")
             except Exception:
                 continue
-        return "\n".join(chunks)
+        return "\n".join(parts)
     except Exception:
         return ""
 
 
 def _read_docx_text(path: Path) -> str:
-    """Word .docx dosyasından metin çıkar."""
+    """Extract paragraph and table text from a .docx file."""
     try:
         from docx import Document
         doc = Document(str(path))
-        parts = [p.text for p in doc.paragraphs if p.text]
-        # Tabloları da topla (CV'lerde çok kullanılır)
+        chunks = [p.text for p in doc.paragraphs if p.text]
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     if cell.text:
-                        parts.append(cell.text)
-        return "\n".join(parts)
+                        chunks.append(cell.text)
+        return "\n".join(chunks)
     except Exception:
         return ""
 
 
 @functools.lru_cache(maxsize=1024)
 def _read_pdf_text_cached(path_str: str, mtime: float, size: int) -> str:
+    # mtime + size in the cache key invalidate the cache when the file changes
     return _read_pdf_text(Path(path_str))
 
 
@@ -150,322 +461,279 @@ def _read_docx_text_cached(path_str: str, mtime: float, size: int) -> str:
 
 
 def _aggressive_strip(s: str) -> str:
-    """Tüm whitespace + null/control byte'ları sil. Fuzzy karşılaştırma için."""
     return re.sub(r"[\s\x00-\x1f]+", "", s)
 
 
-def _kw_variants_drop_one(kw_agg: str):
+def _drop_one_variants(token: str):
+    """Yield variants of `token` with one internal character removed.
+
+    Used as a fuzzy fallback for PDFs whose font lacks unicode mappings for
+    certain glyphs (commonly 'i') — those characters are silently dropped by
+    text extractors, so 'education' becomes 'educaton' in the extracted text.
     """
-    Anahtar kelimenin iç karakterlerinden birini düşürerek varyantlar üret.
-    Bazı PDF'lerde belirli bir glyph (örn. 'i') unicode'a map edilmediği için
-    metinden o karakter kaybolur ('Education' -> 'Educat on' -> 'Educaton').
-    Bu varyantlar o tür kırık metinleri yakalar.
-    """
-    if len(kw_agg) < 6:
-        return  # çok kısa, yanlış pozitif riski yüksek
-    for i in range(1, len(kw_agg) - 1):  # ilk ve son karakteri koru
-        yield kw_agg[:i] + kw_agg[i + 1:]
+    if len(token) < 6:
+        return
+    for i in range(1, len(token) - 1):
+        yield token[:i] + token[i + 1:]
 
 
-def cv_signals(text: str):
-    """
-    Metinden CV sinyallerini bul. (strong_hits, weak_hits) listelerini döner.
-    Önce exact match (normalize edilmiş metin üzerinde),
-    yetersizse fuzzy fallback (her kelimenin tek-harf-eksik varyantları,
-    tüm whitespace strip'lenmiş metin üzerinde).
+def cv_signals(text: str) -> tuple[list[str], list[str]]:
+    """Return (strong_hits, weak_hits) for CV detection in `text`.
+
+    Exact match first; fuzzy fallback runs only if the exact match wasn't
+    decisive (< 1 strong and < 2 weak hits). Fuzzy matches are tagged with
+    a trailing '(~)' so diagnostic output makes the distinction visible.
     """
     if not text:
         return [], []
     text = _maybe_despace(text)
-    t = _normalize(text)
-    strong = [kw for kw in _CV_STRONG if kw in t]
-    weak = [kw for kw in _CV_WEAK if kw in t]
+    normalized = _normalize(text)
 
-    # Yeterli sinyal varsa fuzzy'e gerek yok
+    strong = [kw for kw in _CV_STRONG if kw in normalized]
+    weak = [kw for kw in _CV_WEAK if kw in normalized]
     if strong or len(weak) >= 2:
         return strong, weak
 
-    # Fuzzy fallback
-    t_agg = _aggressive_strip(t)
-    if len(t_agg) < 50:
-        return strong, weak  # çok az metin, fuzzy güvenilmez
+    compact = _aggressive_strip(normalized)
+    if len(compact) < 50:
+        return strong, weak
 
     for kw in _CV_STRONG:
         if kw in strong:
             continue
-        kw_agg = _aggressive_strip(kw)
-        for variant in _kw_variants_drop_one(kw_agg):
-            if variant in t_agg:
+        for variant in _drop_one_variants(_aggressive_strip(kw)):
+            if variant in compact:
                 strong.append(kw + " (~)")
                 break
     for kw in _CV_WEAK:
         if kw in weak:
             continue
-        kw_agg = _aggressive_strip(kw)
-        for variant in _kw_variants_drop_one(kw_agg):
-            if variant in t_agg:
+        for variant in _drop_one_variants(_aggressive_strip(kw)):
+            if variant in compact:
                 weak.append(kw + " (~)")
                 break
     return strong, weak
 
 
-def looks_like_cv(text: str) -> bool:
-    strong, weak = cv_signals(text)
-    return bool(strong) or len(weak) >= 2
+# ---------------------------------------------------------------------------
+# Filename-pattern rules
+#
+# All match against the normalized filename (see _normalize). The CamelCase
+# CV rule is the exception — it matches against the original name so it can
+# rely on case transitions ('AcmeCV_', 'JohnCv_2025.pdf' etc.).
+# ---------------------------------------------------------------------------
 
-# İsim eşleştirmesi normalize-form (lowercase + NFD + Mn-strip) üzerinde yapılır.
-# Bu sayede 'ÖZGEÇMİŞ', 'özgeçmiş', 'ozgecmis' → 'ozgecmis' olur ve tek pattern yeter.
-# Sözcük sınırı: tireleme/altçizgi/boşluk/nokta saymak için harf-olmayan sınır.
-_LB = r"(?<![a-z0-9])"
-_RB = r"(?![a-z0-9])"
+_LB = r"(?<![a-z0-9])"   # left boundary: no preceding letter or digit
+_RB = r"(?![a-z0-9])"    # right boundary: no following letter or digit
 
-# CamelCase CV: 'LinkteraCV_', 'UfukYucelCv-2025'. Orijinal isim (case-sensitive)
-# üzerinde çalışır: küçük harf + büyük 'CV'/'Cv' + ayraç veya son.
 _CAMELCASE_CV = re.compile(r"(?<=[a-z])(CV|Cv)(?=[_\-\s.]|$)")
 
-NAME_RULES = [
-    # CV — kelime sınırlı (2 harf, false positive riski yüksek)
-    (re.compile(_LB + r"(cv|resume|ozgecmis)" + _RB), "CV"),
-
-    # Faturalar
-    (re.compile(_LB + r"(fatura|invoice|receipt|fis|makbuz|bill)" + _RB), "Faturalar"),
-
-    # Ekran Görüntüleri
+NAME_RULES: list[tuple[re.Pattern, str]] = [
+    (re.compile(_LB + r"(cv|resume|ozgecmis)" + _RB), "cv"),
+    (re.compile(_LB + r"(fatura|invoice|receipt|fis|makbuz|bill)" + _RB),
+     "invoices"),
     (re.compile(
         r"(screenshot|screen[\s_-]?shot|ekran[\s_-]?goruntusu|screencap)"
-    ), "Ekran Görüntüleri"),
-
-    # Kurulum
-    (re.compile(r"^(setup|installer|install)[\s_\-.]"), "Kurulum"),
-
-    # Bordro / Maaş
+    ), "screenshots"),
+    (re.compile(r"^(setup|installer|install)[\s_\-.]"), "installers"),
     (re.compile(
-        r"(bordro|gehaltsabrechnung|lohnabrechnung|turnusabrechnung|payslip|payroll)"
-    ), "Bordro"),
-
-    # Banka / Dekont
+        r"(bordro|gehaltsabrechnung|lohnabrechnung|turnusabrechnung|"
+        r"payslip|payroll)"
+    ), "payroll"),
     (re.compile(
-        r"(dekont|"
-        r"kontoauszug|"
+        r"(dekont|kontoauszug|"
         r"payment[\s_-]+confirmation|"
         r"transaction[\s_-]+details|"
         r"account[\s_-]+statement|"
         r"risk[\s_-]?merkez|"
         r"varlik[\s_-]?degisim)"
-    ), "Banka"),
-
-    # Vergi / Steuer
+    ), "bank"),
     (re.compile(
-        r"(steuerberater|"
-        r"mandanteninformation|"
-        r"finanzamt|"
-        r"steuererklarung|"
+        r"(steuerberater|mandanteninformation|finanzamt|steuererklarung|"
         r"vergi[\s_-]+(?:levha|beyanname|beyani|dairesi))"
-    ), "Vergi"),
-
-    # Telekom
+    ), "tax"),
     (re.compile(
-        r"(vodafone|"
-        r"turkcell|"
-        r"turk[\s_-]?telekom|"
-        r"numara[\s_-]?tasima)"
-    ), "Telekom"),
-
-    # Sigorta — Vize'den önce gelmeli ('ipv antrag' buraya aittir)
+        r"(vodafone|turkcell|turk[\s_-]?telekom|numara[\s_-]?tasima)"
+    ), "telecom"),
+    # Insurance must come before visa: 'ipv antrag' belongs here.
     (re.compile(
-        r"(sigorta|"
-        r"versicherung|"
-        r"sfr[\s_-]+ausland|"
-        r"ipv[\s_-]?antrag)"
-    ), "Sigorta"),
-
-    # Sözleşme
+        r"(sigorta|versicherung|sfr[\s_-]+ausland|ipv[\s_-]?antrag)"
+    ), "insurance"),
     (re.compile(
-        r"(sozlesme|"
-        r"mietvertrag|"
-        r"vertragsbestatigung|"
-        r"zusatzvereinbarung|"
-        r"kundigung|"
-        r"vollmacht|"
-        r"ibraname|"
-        r"mitgliedschaft|"
-        r"ek[\s_-]+protokol)"
-    ), "Sözleşme"),
-
-    # Konut / Emlak
+        r"(sozlesme|mietvertrag|vertragsbestatigung|zusatzvereinbarung|"
+        r"kundigung|vollmacht|ibraname|mitgliedschaft|ek[\s_-]+protokol)"
+    ), "contracts"),
     (re.compile(
-        r"(mietspiegel|"
-        r"yapi[\s_-]?raporu|"
-        r"zemin[\s_-]?yapi|"
-        r"nebenkostenabrechnung|"
-        r"emlak|"
+        r"(mietspiegel|yapi[\s_-]?raporu|zemin[\s_-]?yapi|"
+        r"nebenkostenabrechnung|emlak|"
         r"(?<![a-z0-9])tapu(?![a-z0-9]))"
-    ), "Konut"),
-
-    # Bilet (sub-string match — 'btbilet', 'biletmart' yakalansın diye)
-    (re.compile(r"(bilet|ticket|boarding[\s_-]?pass)"), "Bilet"),
-
-    # Vize (IPV çıkarıldı, Sigorta'ya gitti)
+    ), "housing"),
+    (re.compile(r"(bilet|ticket|boarding[\s_-]?pass)"), "tickets"),
     (re.compile(
-        r"(visum|"
-        r"einladungsschreiben|"
-        r"antragszusammenfassung)"
-    ), "Vize"),
-
-    # Resmi Belge
+        r"(visum|einladungsschreiben|antragszusammenfassung)"
+    ), "visa"),
     (re.compile(
-        r"(dijital[\s_-]?kimlik|"
-        r"nvi[\s_-]|"
-        r"emniyet[\s_-]|"
-        r"ehliyet|"
-        r"pasaport|"
-        r"mezun[\s_-]?belgesi|"
-        r"oturum[\s_-]?uzat|"
-        r"sicil[\s_-]?kayd|"
+        r"(dijital[\s_-]?kimlik|nvi[\s_-]|emniyet[\s_-]|ehliyet|pasaport|"
+        r"mezun[\s_-]?belgesi|oturum[\s_-]?uzat|sicil[\s_-]?kayd|"
         r"e[\s_-]?devlet)"
-    ), "Resmi Belge"),
-
-    # Sınav
-    (re.compile(
-        r"(protokoll[\s_-]+theorie|ergebnisprotokoll)"
-    ), "Sınav"),
-
-    # Kılavuz / Manual
+    ), "official"),
+    (re.compile(r"(protokoll[\s_-]+theorie|ergebnisprotokoll)"), "exams"),
     (re.compile(
         r"(kilavuz|user[\s_-]?guide|handbuch|"
         r"(?<![a-z0-9])manual(?![a-z0-9]))"
-    ), "Kılavuz"),
-
-    # İade
+    ), "manuals"),
     (re.compile(
         r"(?<![a-z0-9])(?:iade|refund)(?![a-z0-9])|return[\s_-]+label"
-    ), "İade"),
-
-    # Loglar — gerçek log dosyaları (genelde silinebilir)
+    ), "returns"),
     (re.compile(
         r"(eventlog|errorlog|crashlog|debuglog|"
         r"event[\s_-]+log|error[\s_-]+log|crash[\s_-]+log)"
-    ), "Loglar"),
-
-    # Araç / Expose
+    ), "logs"),
     (re.compile(
-        r"(pdf-?expose-|"
-        r"piaggio|"
-        r"\blimousine\b|"
+        r"(pdf-?expose-|piaggio|\blimousine\b|"
         r"(?:^|[\s_\-.])(?:bmw|mercedes|audi|vw|volkswagen|renault)[\s_\-])"
-    ), "Araç"),
+    ), "vehicles"),
 ]
 
-EXT_CATEGORIES = {
-    "Belgeler": {".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".md", ".tex",
-                 ".epub", ".mobi", ".azw3", ".pages"},
-    "Tablolar": {".xls", ".xlsx", ".csv", ".ods", ".tsv", ".numbers"},
-    "Sunumlar": {".ppt", ".pptx", ".odp", ".key"},
-    "Resimler": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif",
-                 ".svg", ".heic", ".ico", ".psd", ".ai", ".raw", ".cr2", ".nef"},
-    "Videolar": {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v",
-                 ".mpg", ".mpeg", ".3gp"},
-    "Müzik": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".opus", ".aiff"},
-    "Arşivler": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz"},
-    "Kurulum": {".exe", ".msi", ".msix", ".appx", ".appxbundle"},
-    "Kod": {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css", ".scss",
-            ".java", ".kt", ".cpp", ".c", ".h", ".hpp", ".cs", ".go", ".rs", ".rb",
-            ".php", ".swift", ".sh", ".ps1", ".bat", ".cmd", ".json", ".xml",
-            ".yml", ".yaml", ".toml", ".ini", ".sql", ".lua", ".gd"},
-    "Yazı Tipleri": {".ttf", ".otf", ".woff", ".woff2"},
-    "Disk Kalıbı": {".iso", ".img", ".dmg", ".vhd", ".vmdk"},
-    "Torrent": {".torrent"},
+
+EXT_RULES = {
+    "documents": {".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".md",
+                  ".tex", ".epub", ".mobi", ".azw3", ".pages"},
+    "spreadsheets": {".xls", ".xlsx", ".csv", ".ods", ".tsv", ".numbers"},
+    "presentations": {".ppt", ".pptx", ".odp", ".key"},
+    "images": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff",
+               ".tif", ".svg", ".heic", ".ico", ".psd", ".ai", ".raw",
+               ".cr2", ".nef"},
+    "videos": {".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
+               ".m4v", ".mpg", ".mpeg", ".3gp"},
+    "music": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma",
+              ".opus", ".aiff"},
+    "archives": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz"},
+    "installers": {".exe", ".msi", ".msix", ".appx", ".appxbundle"},
+    "code": {".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css",
+             ".scss", ".java", ".kt", ".cpp", ".c", ".h", ".hpp", ".cs",
+             ".go", ".rs", ".rb", ".php", ".swift", ".sh", ".ps1", ".bat",
+             ".cmd", ".json", ".xml", ".yml", ".yaml", ".toml", ".ini",
+             ".sql", ".lua", ".gd"},
+    "fonts": {".ttf", ".otf", ".woff", ".woff2"},
+    "disk_images": {".iso", ".img", ".dmg", ".vhd", ".vmdk"},
+    "torrents": {".torrent"},
 }
 
-OTHER = "Diğer"
-ALL_CATEGORIES = set(EXT_CATEGORIES.keys()) | {c for _, c in NAME_RULES} | {OTHER}
-SKIP_NAMES = {UNDO_LOG_NAME, "desktop.ini", "Thumbs.db", "thumbs.db", "$RECYCLE.BIN"}
+
+SKIP_NAMES = {UNDO_LOG_NAME, "desktop.ini", "Thumbs.db", "thumbs.db",
+              "$RECYCLE.BIN"}
 
 
-def classify_detailed(filepath: Path, inspect_content: bool = True):
+def classify_detailed(path: Path, inspect_content: bool = True
+                      ) -> tuple[str, str]:
+    """Return (category_key, reason_text) for a single file path.
+
+    The reason is a short human-readable note about why the file landed in
+    that category — used by the UI when diagnostic mode is on.
     """
-    Sınıflandırma + tanı bilgisi.
-    Döner: (category, reason)
-      reason: insanlara okutmak için kısa açıklama
-    """
-    name = filepath.name
-    # CamelCase CV (orijinal isim, case-sensitive)
+    name = path.name
+
     m = _CAMELCASE_CV.search(name)
     if m:
-        return "CV", f"isim: CamelCase '{m.group()}'"
-    # Geri kalan kurallar normalize edilmiş isim üzerinde
+        return "cv", i18n.t("reason_camelcase_cv", m=m.group())
+
     name_norm = _normalize(name)
-    for pattern, category in NAME_RULES:
+    for pattern, key in NAME_RULES:
         m = pattern.search(name_norm)
         if m:
-            return category, f"isim: '{m.group()}'"
-    ext = filepath.suffix.lower()
+            return key, i18n.t("reason_name", m=m.group())
+
+    ext = path.suffix.lower()
 
     if inspect_content and ext in (".pdf", ".docx"):
         try:
-            st = filepath.stat()
+            stat = path.stat()
             if ext == ".pdf":
-                text = _read_pdf_text_cached(str(filepath), st.st_mtime, st.st_size)
+                text = _read_pdf_text_cached(
+                    str(path), stat.st_mtime, stat.st_size)
                 src = "PDF"
             else:
-                text = _read_docx_text_cached(str(filepath), st.st_mtime, st.st_size)
+                text = _read_docx_text_cached(
+                    str(path), stat.st_mtime, stat.st_size)
                 src = "DOCX"
         except OSError:
-            text, src = "", ext.upper()
+            text, src = "", ext.upper().lstrip(".")
+
         strong, weak = cv_signals(text)
         if strong:
-            return "CV", f"{src} içerik güçlü: {', '.join(strong[:3])}"
+            return "cv", i18n.t(
+                "reason_content_strong", src=src, kws=", ".join(strong[:3]))
         if len(weak) >= 2:
-            return "CV", f"{src} içerik zayıf×{len(weak)}: {', '.join(weak[:4])}"
-        # CV değil — ama metin durumunu belirt
+            return "cv", i18n.t(
+                "reason_content_weak", src=src, n=len(weak),
+                kws=", ".join(weak[:4]))
+
+        # Not a CV — produce an explanatory note then fall through to ext.
         if not text:
-            content_note = f"{src} metin yok (taranmış/şifreli olabilir)"
+            note = i18n.t("reason_content_no_text", src=src)
         elif weak:
-            content_note = f"{src} CV değil (zayıf×{len(weak)}: {', '.join(weak[:3])})"
+            note = i18n.t(
+                "reason_content_not_cv_weak", src=src, n=len(weak),
+                kws=", ".join(weak[:3]))
         else:
-            content_note = f"{src} CV değil ({len(text)} kr metin, eşleşme yok)"
-        # Uzantıya geri düş
-        for category, exts in EXT_CATEGORIES.items():
+            note = i18n.t("reason_content_not_cv", src=src, n=len(text))
+
+        for key, exts in EXT_RULES.items():
             if ext in exts:
-                return category, f"uzantı {ext} ({content_note})"
-        return OTHER, f"uzantı eşleşmedi ({content_note})"
+                return key, i18n.t(
+                    "reason_ext_with_content", ext=ext, note=note)
+        return "other", i18n.t("reason_no_match_with_note", note=note)
 
-    for category, exts in EXT_CATEGORIES.items():
+    for key, exts in EXT_RULES.items():
         if ext in exts:
-            return category, f"uzantı {ext}"
-    return OTHER, f"uzantı eşleşmedi: {ext}"
+            return key, i18n.t("reason_ext", ext=ext)
+    return "other", i18n.t("reason_ext_no_match", ext=ext)
 
 
-def classify(filepath: Path, inspect_content: bool = True) -> str:
-    return classify_detailed(filepath, inspect_content)[0]
+def classify(path: Path, inspect_content: bool = True) -> str:
+    """Convenience wrapper that returns only the category key."""
+    return classify_detailed(path, inspect_content)[0]
 
 
-def plan_moves(root: Path, progress_cb=None, with_reason: bool = False):
+def plan_moves(root: Path, progress_cb=None, with_reason: bool = False
+               ) -> list:
+    """Walk `root` (top level only) and produce a move plan.
+
+    Returns a list of tuples. Each tuple is (src, dst, category_key) or
+    (src, dst, category_key, reason) when with_reason is True. `dst` is
+    computed using the active locale.
     """
-    progress_cb(i, total, current_filename) — opsiyonel.
-    with_reason=True ise tuple (src, dst, category, reason) döner.
-    """
+    skip_dirs = all_known_category_names()
+
     entries = []
     for entry in root.iterdir():
         if entry.is_dir():
             continue
-        if entry.name in SKIP_NAMES or entry.name.startswith("."):
+        name = entry.name
+        if name in SKIP_NAMES or name.startswith("."):
+            continue
+        # Defensive: in case a category folder ever shows up as a "file".
+        if name in skip_dirs:
             continue
         entries.append(entry)
+
     moves = []
     total = len(entries)
     for i, entry in enumerate(entries, 1):
         if progress_cb:
             progress_cb(i, total, entry.name)
-        category, reason = classify_detailed(entry)
+        key, reason = classify_detailed(entry)
+        dst = root / category_display(key) / entry.name
         if with_reason:
-            moves.append((entry, root / category / entry.name, category, reason))
+            moves.append((entry, dst, key, reason))
         else:
-            moves.append((entry, root / category / entry.name, category))
+            moves.append((entry, dst, key))
     return moves
 
 
 def resolve_conflict(dst: Path) -> Path:
+    """If `dst` exists, return a sibling path with a (1), (2), ... suffix."""
     if not dst.exists():
         return dst
     stem, suffix, parent = dst.stem, dst.suffix, dst.parent
@@ -477,231 +745,430 @@ def resolve_conflict(dst: Path) -> Path:
         i += 1
 
 
+# ---------------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------------
+
+class SettingsDialog(tk.Toplevel):
+    """Modal preferences dialog. Currently exposes the UI language."""
+
+    def __init__(self, master: tk.Misc, on_language_change) -> None:
+        super().__init__(master)
+        self.transient(master)
+        self.resizable(False, False)
+        self.title(i18n.t("settings_title"))
+        self._on_language_change = on_language_change
+        self._current_lang = i18n.lang
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text=i18n.t("settings_language")).grid(
+            row=0, column=0, sticky="w", padx=(0, 10), pady=4)
+
+        self._lang_var = tk.StringVar(value=LANGUAGES[self._current_lang])
+        combo = ttk.Combobox(
+            frame, state="readonly",
+            values=list(LANGUAGES.values()),
+            textvariable=self._lang_var,
+            width=20,
+        )
+        combo.grid(row=0, column=1, sticky="w", pady=4)
+
+        ttk.Label(frame, text=i18n.t("settings_restart_note"),
+                  foreground="#666").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        ttk.Button(btn_row, text=i18n.t("settings_cancel"),
+                   command=self.destroy).pack(side="right", padx=(8, 0))
+        ttk.Button(btn_row, text=i18n.t("settings_save"),
+                   command=self._save).pack(side="right")
+
+        self.grab_set()
+        self.wait_visibility()
+        self.focus_set()
+
+    def _save(self) -> None:
+        chosen_label = self._lang_var.get()
+        code = next(
+            (c for c, label in LANGUAGES.items() if label == chosen_label),
+            self._current_lang,
+        )
+        if code != self._current_lang:
+            self._on_language_change(code)
+        self.destroy()
+
+
 class OrganizerApp:
-    def __init__(self, root):
+    """The top-level Tk window and event handlers for the organizer."""
+
+    def __init__(self, root: tk.Tk, settings: dict) -> None:
         self.root = root
-        self.root.title(APP_TITLE)
-        self.root.geometry("820x580")
-        self.root.minsize(640, 480)
+        self.settings = settings
+        i18n.set_language(settings.get("language", DEFAULT_LANG))
 
         self.folder_var = tk.StringVar()
         self.verbose_var = tk.BooleanVar(value=False)
+        self.status_var = tk.StringVar()
         self.msg_queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
+        # Reactive widget text — updated when language changes.
+        self._labels: dict[str, tk.StringVar] = {}
+
+        self._build_menu()
         self._build_ui()
+        self._apply_language()
         self.root.after(100, self._drain_queue)
 
-    def _build_ui(self):
+    # ------- UI construction ------------------------------------------------
+
+    def _label_var(self, key: str) -> tk.StringVar:
+        if key not in self._labels:
+            self._labels[key] = tk.StringVar(value=i18n.t(key))
+        return self._labels[key]
+
+    def _build_menu(self) -> None:
+        bar = tk.Menu(self.root)
+        self.root.config(menu=bar)
+
+        self._menu_file = tk.Menu(bar, tearoff=0)
+        self._menu_settings = tk.Menu(bar, tearoff=0)
+        self._menu_help = tk.Menu(bar, tearoff=0)
+
+        bar.add_cascade(menu=self._menu_file, label=i18n.t("menu_file"))
+        bar.add_cascade(menu=self._menu_settings,
+                        label=i18n.t("menu_settings"))
+        bar.add_cascade(menu=self._menu_help, label=i18n.t("menu_help"))
+
+        self._menu_file.add_command(
+            label=i18n.t("menu_exit"), command=self.root.destroy)
+        self._menu_settings.add_command(
+            label=i18n.t("menu_preferences"), command=self._open_settings)
+        self._menu_help.add_command(
+            label=i18n.t("menu_about"), command=self._show_about)
+
+        self._menubar = bar
+
+    def _build_ui(self) -> None:
+        self.root.title(i18n.t("app_title"))
+        self.root.geometry("860x600")
+        self.root.minsize(700, 480)
+
         pad = {"padx": 10, "pady": 6}
 
         top = ttk.Frame(self.root)
         top.pack(fill="x", **pad)
-        ttk.Label(top, text="Klasör:").pack(side="left")
+        ttk.Label(top, textvariable=self._label_var("folder_label")).pack(
+            side="left")
         ttk.Entry(top, textvariable=self.folder_var).pack(
-            side="left", fill="x", expand=True, padx=(6, 6)
-        )
-        ttk.Button(top, text="Gözat...", command=self._browse).pack(side="left")
+            side="left", fill="x", expand=True, padx=(6, 6))
+        self.browse_btn = ttk.Button(
+            top, textvariable=self._label_var("browse_btn"),
+            command=self._browse)
+        self.browse_btn.pack(side="left")
 
-        btns = ttk.Frame(self.root)
-        btns.pack(fill="x", **pad)
-        self.preview_btn = ttk.Button(btns, text="Önizle", command=self._preview)
+        actions = ttk.Frame(self.root)
+        actions.pack(fill="x", **pad)
+        self.preview_btn = ttk.Button(
+            actions, textvariable=self._label_var("preview_btn"),
+            command=self._preview)
         self.preview_btn.pack(side="left", padx=(0, 6))
-        self.organize_btn = ttk.Button(btns, text="Düzenle", command=self._organize)
+        self.organize_btn = ttk.Button(
+            actions, textvariable=self._label_var("organize_btn"),
+            command=self._organize)
         self.organize_btn.pack(side="left", padx=(0, 6))
-        self.undo_btn = ttk.Button(btns, text="Geri Al", command=self._undo)
+        self.undo_btn = ttk.Button(
+            actions, textvariable=self._label_var("undo_btn"),
+            command=self._undo)
         self.undo_btn.pack(side="left", padx=(0, 6))
         ttk.Checkbutton(
-            btns, text="Tanı detayları", variable=self.verbose_var
-        ).pack(side="left", padx=(12, 0))
-        ttk.Button(btns, text="Logu Temizle", command=self._clear_log).pack(side="right")
+            actions, textvariable=self._label_var("verbose_check"),
+            variable=self.verbose_var).pack(side="left", padx=(12, 0))
+        ttk.Button(
+            actions, textvariable=self._label_var("clear_log_btn"),
+            command=self._clear_log).pack(side="right")
 
         self.progress = ttk.Progressbar(self.root, mode="determinate")
         self.progress.pack(fill="x", **pad)
 
-        self.status_var = tk.StringVar(value="Hazır.")
+        self.status_var.set(i18n.t("status_ready"))
         ttk.Label(self.root, textvariable=self.status_var, anchor="w").pack(
-            fill="x", padx=10
-        )
+            fill="x", padx=10)
 
         log_frame = ttk.Frame(self.root)
         log_frame.pack(fill="both", expand=True, **pad)
         self.log = tk.Text(log_frame, wrap="none", font=("Consolas", 9))
-        yscroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
-        xscroll = ttk.Scrollbar(log_frame, orient="horizontal", command=self.log.xview)
-        self.log.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        yscroll = ttk.Scrollbar(log_frame, orient="vertical",
+                                command=self.log.yview)
+        xscroll = ttk.Scrollbar(log_frame, orient="horizontal",
+                                command=self.log.xview)
+        self.log.configure(yscrollcommand=yscroll.set,
+                           xscrollcommand=xscroll.set)
         self.log.grid(row=0, column=0, sticky="nsew")
         yscroll.grid(row=0, column=1, sticky="ns")
         xscroll.grid(row=1, column=0, sticky="ew")
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
 
-    def _browse(self):
-        folder = filedialog.askdirectory(title="Düzenlenecek klasörü seç")
+        footer = ttk.Frame(self.root)
+        footer.pack(fill="x", padx=10, pady=(0, 8))
+        self.bmc_link = tk.Label(
+            footer, text="", fg="#1f6feb", cursor="hand2",
+            font=("Segoe UI", 9, "underline"),
+        )
+        self.bmc_link.pack(side="right")
+        self.bmc_link.bind("<Button-1>", lambda _e: webbrowser.open(BMC_URL))
+
+    def _apply_language(self) -> None:
+        """Refresh every translatable label after a language change."""
+        self.root.title(i18n.t("app_title"))
+        for key, var in self._labels.items():
+            var.set(i18n.t(key))
+        self.status_var.set(i18n.t("status_ready"))
+
+        # Menu cascade labels do not bind to StringVars cleanly across
+        # platforms — easier to rebuild the whole menu from scratch.
+        self._build_menu()
+
+        # Footer link uses the localized phrasing + URL.
+        self.bmc_link.config(text=f"{i18n.t('bmc_label')}  -  {BMC_URL}")
+
+    # ------- Menu actions ---------------------------------------------------
+
+    def _open_settings(self) -> None:
+        SettingsDialog(self.root, on_language_change=self._change_language)
+
+    def _change_language(self, code: str) -> None:
+        i18n.set_language(code)
+        self.settings["language"] = code
+        save_settings(self.settings)
+        self._apply_language()
+
+    def _show_about(self) -> None:
+        messagebox.showinfo(
+            i18n.t("about_title"),
+            i18n.t("about_body", app=APP_NAME, ver=APP_VERSION),
+        )
+
+    # ------- Helpers --------------------------------------------------------
+
+    def _browse(self) -> None:
+        folder = filedialog.askdirectory()
         if folder:
             self.folder_var.set(folder)
 
-    def _log(self, msg):
+    def _log_line(self, msg: str) -> None:
         self.log.insert(END, msg + "\n")
         self.log.see(END)
 
-    def _clear_log(self):
+    def _clear_log(self) -> None:
         self.log.delete("1.0", END)
 
-    def _set_busy(self, busy):
+    def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
-        self.preview_btn.config(state=state)
-        self.organize_btn.config(state=state)
-        self.undo_btn.config(state=state)
+        for btn in (self.preview_btn, self.organize_btn, self.undo_btn):
+            btn.config(state=state)
 
-    def _get_root(self):
-        path = self.folder_var.get().strip().strip('"')
-        if not path:
-            messagebox.showwarning(APP_TITLE, "Önce bir klasör seç.")
+    def _resolve_root(self) -> Path | None:
+        raw = self.folder_var.get().strip().strip('"')
+        if not raw:
+            messagebox.showwarning(
+                i18n.t("app_title"), i18n.t("pick_folder_first"))
             return None
-        root = Path(path)
+        root = Path(raw)
         if not root.is_dir():
-            messagebox.showerror(APP_TITLE, f"Klasör bulunamadı:\n{path}")
+            messagebox.showerror(
+                i18n.t("app_title"),
+                i18n.t("folder_not_found", path=raw))
             return None
         return root
 
-    def _preview(self):
-        root = self._get_root()
+    # ------- Preview --------------------------------------------------------
+
+    def _preview(self) -> None:
+        root = self._resolve_root()
         if not root:
             return
         self._clear_log()
-        self._log(f"=== Önizleme: {root} ===")
-        self._log("(PDF & Word dosyaları CV tespiti için içeriden taranıyor...)\n")
+        self._log_line(i18n.t("preview_header", path=root))
+        self._log_line(i18n.t("preview_scanning"))
         self._set_busy(True)
         verbose = self.verbose_var.get()
         threading.Thread(
-            target=self._preview_worker, args=(root, verbose), daemon=True
+            target=self._preview_worker, args=(root, verbose),
+            daemon=True,
         ).start()
 
-    def _preview_worker(self, root: Path, verbose: bool):
-        def progress_cb(i, total, name):
+    def _preview_worker(self, root: Path, verbose: bool) -> None:
+        def progress(i, total, name):
             self.msg_queue.put(("progress_max", total))
             self.msg_queue.put(("progress", i))
-            self.msg_queue.put(("status", f"İnceleniyor {i}/{total}: {name}"))
-        try:
-            moves = plan_moves(root, progress_cb=progress_cb, with_reason=True)
-            if not moves:
-                self.msg_queue.put(("log", "Düzenlenecek dosya yok."))
-                self.msg_queue.put(("done", "Boş."))
-                return
-            by_cat = {}
-            for src, _dst, cat, reason in moves:
-                by_cat.setdefault(cat, []).append((src.name, reason))
-            for cat in sorted(by_cat):
-                self.msg_queue.put(("log", f"[{cat}]  ({len(by_cat[cat])} dosya)"))
-                for name, reason in sorted(by_cat[cat]):
-                    if verbose:
-                        self.msg_queue.put(("log", f"  - {name}    [{reason}]"))
-                    else:
-                        self.msg_queue.put(("log", f"  - {name}"))
-                self.msg_queue.put(("log", ""))
             self.msg_queue.put((
-                "log", f"Toplam: {len(moves)} dosya, {len(by_cat)} kategori."
+                "status",
+                i18n.t("scanning_progress", i=i, total=total, name=name),
+            ))
+        try:
+            moves = plan_moves(root, progress_cb=progress, with_reason=True)
+            if not moves:
+                self.msg_queue.put(("log", i18n.t("no_files")))
+                self.msg_queue.put(("done", i18n.t("empty_done")))
+                return
+
+            grouped: dict[str, list[tuple[str, str]]] = {}
+            for src, _dst, key, reason in moves:
+                label = category_display(key)
+                grouped.setdefault(label, []).append((src.name, reason))
+
+            for label in sorted(grouped):
+                self.msg_queue.put((
+                    "log", f"[{label}]  ({len(grouped[label])})"))
+                for name, reason in sorted(grouped[label]):
+                    line = f"  - {name}    [{reason}]" if verbose \
+                        else f"  - {name}"
+                    self.msg_queue.put(("log", line))
+                self.msg_queue.put(("log", ""))
+
+            self.msg_queue.put((
+                "log",
+                i18n.t("preview_summary", total=len(moves),
+                       cats=len(grouped)),
             ))
             if not verbose:
-                self.msg_queue.put((
-                    "log",
-                    "İpucu: Bir dosya yanlış kategoride mi? 'Tanı detayları'nı aç ve tekrar Önizle.",
-                ))
-            self.msg_queue.put(("done", f"Önizleme: {len(moves)} dosya hazır."))
+                self.msg_queue.put(("log", i18n.t("verbose_hint")))
+            self.msg_queue.put((
+                "done", i18n.t("preview_done", n=len(moves))))
         except Exception as e:
-            self.msg_queue.put(("log", f"\nFATAL HATA: {e}"))
-            self.msg_queue.put(("done", "Hata."))
+            self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
+            self.msg_queue.put(("done", i18n.t("error_done")))
 
-    def _organize(self):
-        root = self._get_root()
+    # ------- Organize -------------------------------------------------------
+
+    def _organize(self) -> None:
+        root = self._resolve_root()
         if not root:
             return
         if not messagebox.askyesno(
-            APP_TITLE,
-            f"{root}\n\nİçindeki dosyalar kategori klasörlerine taşınacak. Devam edilsin mi?",
+            i18n.t("app_title"),
+            i18n.t("confirm_organize", path=root),
         ):
             return
         self._set_busy(True)
-        threading.Thread(target=self._organize_worker, args=(root,), daemon=True).start()
+        threading.Thread(
+            target=self._organize_worker, args=(root,), daemon=True,
+        ).start()
 
-    def _organize_worker(self, root: Path):
+    def _organize_worker(self, root: Path) -> None:
         try:
             moves = plan_moves(root)
-            self.msg_queue.put(("log", f"=== Düzenleniyor: {root} ==="))
+            self.msg_queue.put(("log", i18n.t("organize_header", path=root)))
             if not moves:
-                self.msg_queue.put(("log", "Düzenlenecek dosya yok."))
-                self.msg_queue.put(("done", "Boş."))
+                self.msg_queue.put(("log", i18n.t("no_files")))
+                self.msg_queue.put(("done", i18n.t("empty_done")))
                 return
             self.msg_queue.put(("progress_max", len(moves)))
-            undo_entries = []
+
+            undo_records = []
             errors = 0
-            ts = datetime.now().isoformat(timespec="seconds")
-            for i, (src, dst, cat) in enumerate(moves, 1):
+            timestamp = datetime.now().isoformat(timespec="seconds")
+
+            for i, (src, dst, key) in enumerate(moves, 1):
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    final_dst = resolve_conflict(dst)
-                    shutil.move(str(src), str(final_dst))
-                    undo_entries.append({"from": str(final_dst), "to": str(src)})
-                    self.msg_queue.put(("log", f"[{cat}] {src.name}"))
+                    final = resolve_conflict(dst)
+                    shutil.move(str(src), str(final))
+                    undo_records.append({
+                        "from": str(final), "to": str(src),
+                    })
+                    self.msg_queue.put((
+                        "log",
+                        f"[{category_display(key)}] {src.name}",
+                    ))
                 except Exception as e:
                     errors += 1
-                    self.msg_queue.put(("log", f"HATA: {src.name} -> {e}"))
+                    self.msg_queue.put((
+                        "log",
+                        f"{i18n.t('error_label')}: {src.name} -> {e}",
+                    ))
                 self.msg_queue.put(("progress", i))
-            undo_path = root / UNDO_LOG_NAME
-            history = []
-            if undo_path.exists():
-                try:
-                    history = json.loads(undo_path.read_text(encoding="utf-8"))
-                except Exception:
-                    history = []
-            history.append({"timestamp": ts, "moves": undo_entries})
-            try:
-                undo_path.write_text(
-                    json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-            except Exception as e:
-                self.msg_queue.put(("log", f"UYARI: Geri-al kütüğü yazılamadı: {e}"))
+
+            self._append_undo(root, timestamp, undo_records)
             self.msg_queue.put((
                 "log",
-                f"\nBitti. {len(undo_entries)} dosya taşındı, {errors} hata.",
+                i18n.t("organize_done_log",
+                       moved=len(undo_records), errors=errors),
             ))
-            self.msg_queue.put(("done", f"Tamam: {len(undo_entries)} taşındı, {errors} hata."))
+            self.msg_queue.put((
+                "done",
+                i18n.t("organize_done_status",
+                       moved=len(undo_records), errors=errors),
+            ))
         except Exception as e:
-            self.msg_queue.put(("log", f"\nFATAL HATA: {e}"))
-            self.msg_queue.put(("done", "Hata."))
+            self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
+            self.msg_queue.put(("done", i18n.t("error_done")))
 
-    def _undo(self):
-        root = self._get_root()
+    def _append_undo(self, root: Path, timestamp: str,
+                     records: list[dict]) -> None:
+        undo_path = root / UNDO_LOG_NAME
+        history = []
+        if undo_path.exists():
+            try:
+                history = json.loads(undo_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                history = []
+        history.append({"timestamp": timestamp, "moves": records})
+        try:
+            undo_path.write_text(
+                json.dumps(history, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            self.msg_queue.put((
+                "log", i18n.t("warn_undo_write_failed", err=e)))
+
+    # ------- Undo -----------------------------------------------------------
+
+    def _undo(self) -> None:
+        root = self._resolve_root()
         if not root:
             return
         undo_path = root / UNDO_LOG_NAME
         if not undo_path.exists():
-            messagebox.showinfo(APP_TITLE, "Geri alınacak işlem bulunamadı.")
+            messagebox.showinfo(
+                i18n.t("app_title"), i18n.t("undo_no_history"))
             return
         try:
             history = json.loads(undo_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            messagebox.showerror(APP_TITLE, f"Geri-al kütüğü okunamadı:\n{e}")
+        except (json.JSONDecodeError, OSError) as e:
+            messagebox.showerror(
+                i18n.t("app_title"),
+                i18n.t("undo_read_error", err=e))
             return
         if not history:
-            messagebox.showinfo(APP_TITLE, "Geri alınacak işlem bulunamadı.")
+            messagebox.showinfo(
+                i18n.t("app_title"), i18n.t("undo_no_history"))
             return
+
         last = history[-1]
-        n = len(last["moves"])
         if not messagebox.askyesno(
-            APP_TITLE,
-            f"Son işlem geri alınacak: {n} dosya, {last['timestamp']} tarihinde taşınmıştı.\nDevam edilsin mi?",
+            i18n.t("app_title"),
+            i18n.t("confirm_undo",
+                   n=len(last["moves"]), date=last["timestamp"]),
         ):
             return
+
         self._set_busy(True)
         threading.Thread(
-            target=self._undo_worker, args=(root, history), daemon=True
+            target=self._undo_worker, args=(root, history),
+            daemon=True,
         ).start()
 
-    def _undo_worker(self, root: Path, history):
+    def _undo_worker(self, root: Path, history: list) -> None:
         try:
             last = history.pop()
-            self.msg_queue.put(("log", f"=== Geri alınıyor: {last['timestamp']} ==="))
+            self.msg_queue.put((
+                "log", i18n.t("undo_header", date=last["timestamp"])))
             moves = last["moves"]
             self.msg_queue.put(("progress_max", len(moves)))
             errors = 0
@@ -710,48 +1177,66 @@ class OrganizerApp:
                 try:
                     if src.exists():
                         dst.parent.mkdir(parents=True, exist_ok=True)
-                        final_dst = resolve_conflict(dst)
-                        shutil.move(str(src), str(final_dst))
-                        self.msg_queue.put(("log", f"<- {final_dst.name}"))
+                        final = resolve_conflict(dst)
+                        shutil.move(str(src), str(final))
+                        self.msg_queue.put(("log", f"<- {final.name}"))
                     else:
-                        self.msg_queue.put(("log", f"ATLANDI (kayıp): {src.name}"))
+                        self.msg_queue.put((
+                            "log", i18n.t("skipped_missing", name=src.name)))
                 except Exception as e:
                     errors += 1
-                    self.msg_queue.put(("log", f"HATA: {src} -> {e}"))
+                    self.msg_queue.put((
+                        "log",
+                        f"{i18n.t('error_label')}: {src} -> {e}",
+                    ))
                 self.msg_queue.put(("progress", i))
-            for cat in ALL_CATEGORIES:
-                d = root / cat
-                if d.is_dir():
+
+            # Remove now-empty category folders (any language).
+            for label in all_known_category_names():
+                folder = root / label
+                if folder.is_dir():
                     try:
-                        if not any(d.iterdir()):
-                            d.rmdir()
-                    except Exception:
+                        if not any(folder.iterdir()):
+                            folder.rmdir()
+                    except OSError:
                         pass
-            undo_path = root / UNDO_LOG_NAME
-            if history:
-                undo_path.write_text(
-                    json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-            else:
-                try:
-                    undo_path.unlink()
-                except Exception:
-                    pass
+
+            self._save_remaining_undo(root, history)
             self.msg_queue.put((
                 "log",
-                f"\nGeri alma bitti. {len(moves) - errors} dosya, {errors} hata.",
+                i18n.t("undo_done_log",
+                       moved=len(moves) - errors, errors=errors),
             ))
-            self.msg_queue.put(("done", "Geri alındı."))
+            self.msg_queue.put(("done", i18n.t("undo_done")))
         except Exception as e:
-            self.msg_queue.put(("log", f"\nFATAL HATA: {e}"))
-            self.msg_queue.put(("done", "Hata."))
+            self.msg_queue.put(("log", i18n.t("fatal_error", err=e)))
+            self.msg_queue.put(("done", i18n.t("error_done")))
 
-    def _drain_queue(self):
+    @staticmethod
+    def _save_remaining_undo(root: Path, history: list) -> None:
+        undo_path = root / UNDO_LOG_NAME
+        if history:
+            try:
+                undo_path.write_text(
+                    json.dumps(history, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+        else:
+            try:
+                undo_path.unlink()
+            except OSError:
+                pass
+
+    # ------- Message pump ---------------------------------------------------
+
+    def _drain_queue(self) -> None:
         try:
             while True:
                 kind, payload = self.msg_queue.get_nowait()
                 if kind == "log":
-                    self._log(payload)
+                    self._log_line(payload)
                 elif kind == "progress_max":
                     self.progress.config(maximum=payload, value=0)
                 elif kind == "progress":
@@ -766,15 +1251,20 @@ class OrganizerApp:
         self.root.after(100, self._drain_queue)
 
 
-def main():
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    settings = load_settings()
     root = tk.Tk()
     try:
         style = ttk.Style()
         if "vista" in style.theme_names():
             style.theme_use("vista")
-    except Exception:
+    except tk.TclError:
         pass
-    OrganizerApp(root)
+    OrganizerApp(root, settings)
     root.mainloop()
 
 
