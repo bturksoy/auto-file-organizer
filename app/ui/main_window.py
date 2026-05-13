@@ -21,6 +21,7 @@ from app.ui.pages.profiles import ProfilesPage
 from app.ui.pages.rules import RulesPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.sidebar import Sidebar
+from app.ui.widgets.toast import ToastManager
 
 
 class MainWindow(QMainWindow):
@@ -33,6 +34,9 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self._build()
         self._build_statusbar()
+        # ToastManager is attached after _build so toasts can find a sized
+        # widget and place themselves correctly on first show.
+        self.toast_manager = ToastManager.attach(self)
         self._state.folder_changed.connect(self._on_folder_changed)
         self._state.active_profile_changed.connect(self._refresh_status)
         self._state.profiles_changed.connect(self._refresh_status)

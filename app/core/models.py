@@ -303,6 +303,10 @@ class AppData:
     check_updates_on_startup: bool = True
     recent_folders: list[str] = field(default_factory=list)
     dismissed_update_version: str = ""
+    # Set to True once the first-run wizard has been shown (whether the
+    # user finished or skipped it). Persisted so the wizard doesn't
+    # reappear on every launch.
+    first_run_seen: bool = False
 
     @staticmethod
     def from_dict(d: dict) -> "AppData":
@@ -317,6 +321,7 @@ class AppData:
             check_updates_on_startup=bool(d.get("check_updates_on_startup", True)),
             recent_folders=list(d.get("recent_folders", [])),
             dismissed_update_version=str(d.get("dismissed_update_version", "")),
+            first_run_seen=bool(d.get("first_run_seen", False)),
         )
 
     def to_dict(self) -> dict[str, Any]:

@@ -22,6 +22,7 @@ from app.ui.dialogs.stats import StatsDialog
 from app.ui.dialogs.undo_history import UndoHistoryDialog
 from app.ui.pages.base_page import BasePage, InfoBanner
 from app.ui.theme import active_palette, palette_signal
+from app.ui.widgets.organize_banner import OrganizeBanner, STATS_THRESHOLD
 
 
 class _Bridge(QObject):
@@ -144,6 +145,11 @@ class HomePage(BasePage):
         self.progress.setTextVisible(False)
         self.progress.setFixedHeight(6)
         layout.addWidget(self.progress)
+
+        # Inline result banner — hidden until an organize run completes.
+        self._result_banner = OrganizeBanner()
+        self._result_banner.stats_requested.connect(self._show_stats_dialog)
+        layout.addWidget(self._result_banner)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
@@ -316,6 +322,7 @@ class HomePage(BasePage):
                 return
 
         self._set_busy(True)
+        self._result_banner.hide_result()
         self._log_lines.clear()
         self.log.clear()
         self._append_log(i18n.t("page.home.organize_log_header", path=str(folder)))
@@ -352,14 +359,28 @@ class HomePage(BasePage):
             "page.home.organize_done_summary",
             moved=moved, errors=errors, secs=secs))
         self._set_busy(False)
+
         result = self._state.last_result
-        if result and result.moved:
-            profile = self._state.active_profile()
-            lookup = None
-            if profile:
-                names = {c.id: c.name for c in profile.categories}
-                lookup = names.get
-            StatsDialog(result, category_lookup=lookup, parent=self).exec()
+        cats_touched = len(result.per_category) if result else 0
+        self._result_banner.show_result(moved, errors, cats_touched)
+
+        # The full stats popup is now reserved for sizable moves where the
+        # per-category breakdown is genuinely useful. Smaller runs are
+        # covered by the inline banner; users can still open the popup
+        # from the banner's "View stats" button.
+        if result and result.moved >= STATS_THRESHOLD:
+            self._show_stats_dialog()
+
+    def _show_stats_dialog(self) -> None:
+        result = self._state.last_result
+        if not result:
+            return
+        profile = self._state.active_profile()
+        lookup = None
+        if profile:
+            names = {c.id: c.name for c in profile.categories}
+            lookup = names.get
+        StatsDialog(result, category_lookup=lookup, parent=self).exec()
 
     def _open_duplicates(self) -> None:
         folder = self._state.current_folder
@@ -406,7 +427,24 @@ class HomePage(BasePage):
         if confirm != QMessageBox.Yes:
             return
         restored, errors = undo_last(folder)
-        QMessageBox.information(
-            self, i18n.t("dialog.undo_complete.title"),
-            i18n.t("dialog.undo_complete.body", restored=restored, errors=errors),
-        )
+        # Toast instead of modal popup — undo is low-risk to confirm.
+        toaster = self._toast_manager()
+        if toaster is not None:
+            if errors:
+                toaster.warning(i18n.t(
+                    "toast.undo_with_errors",
+                    restored=restored, errors=errors))
+            else:
+                toaster.success(i18n.t("toast.undo_done", restored=restored))
+        # If for some reason the toast host isn't available, fall back to
+        # the old behaviour so the user still gets feedback.
+        else:
+            QMessageBox.information(
+                self, i18n.t("dialog.undo_complete.title"),
+                i18n.t("dialog.undo_complete.body",
+                       restored=restored, errors=errors),
+            )
+
+    def _toast_manager(self):
+        """Find the MainWindow's ToastManager if one is attached."""
+        return getattr(self.window(), "toast_manager", None)

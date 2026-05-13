@@ -98,6 +98,36 @@ def _start_install(info: dict, bridge: _UpdateBridge) -> None:
     threading.Thread(target=worker, daemon=True).start()
 
 
+def _run_first_run_wizard(state: AppState, holder: dict) -> None:
+    """Show the welcome wizard and persist the user's picks.
+
+    Marking `first_run_seen` happens regardless of how the wizard
+    exits — finishing, skipping, or closing the window. The wizard is
+    explicitly low-stakes, and we never want to re-show it.
+    """
+    from app.ui.dialogs.first_run import FirstRunWizard
+
+    parent = holder["window"]
+    wiz = FirstRunWizard(state, parent=parent)
+    accepted = wiz.exec()
+    state.data.first_run_seen = True
+
+    if accepted:
+        folder = wiz.selected_folder()
+        if folder is not None:
+            state.set_folder(folder)
+            profile = state.active_profile()
+            if profile is not None:
+                # The chosen folder also seeds watched_folders so the
+                # scheduled / realtime engines pick it up immediately if
+                # the user enabled them via the wizard.
+                if str(folder) not in profile.settings.watched_folders:
+                    profile.settings.watched_folders.append(str(folder))
+                if wiz.realtime_requested():
+                    profile.settings.background_mode = "realtime"
+    state.save()
+
+
 def main() -> int:
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
@@ -266,6 +296,12 @@ def main() -> int:
         holder["window"].hide()
     else:
         holder["window"].show()
+
+    # First-run welcome wizard. Runs once per machine (gated on the
+    # `first_run_seen` flag) — anyone who really wants it again can flip
+    # the flag back to false in appdata.json.
+    if not state.data.first_run_seen:
+        QTimer.singleShot(150, lambda: _run_first_run_wizard(state, holder))
 
     QTimer.singleShot(800, lambda: _spawn_update_check(state, bridge))
 

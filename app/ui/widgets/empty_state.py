@@ -1,8 +1,15 @@
-"""Friendly placeholder shown when a list is empty."""
+"""Friendly placeholder shown when a list is empty.
+
+Pages pass `action_label` + `action_callback` when they want the empty
+state to also offer a one-click way to create the first entry — this is
+the empty-state CTA pattern.
+"""
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.core.i18n import i18n
 from app.ui.theme import active_palette, palette_signal
@@ -10,14 +17,17 @@ from app.ui.theme import active_palette, palette_signal
 
 class EmptyState(QWidget):
     def __init__(self, *, icon: str = "✦", title: str | None = None,
-                 message: str = "", parent=None) -> None:
+                 message: str = "",
+                 action_label: str | None = None,
+                 action_callback: Callable[[], None] | None = None,
+                 parent=None) -> None:
         super().__init__(parent)
         if title is None:
             title = i18n.t("widget.empty_state.default_title")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 36, 20, 36)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
         layout.setAlignment(Qt.AlignCenter)
 
         self._glyph = QLabel(icon)
@@ -34,6 +44,14 @@ class EmptyState(QWidget):
             self._msg.setAlignment(Qt.AlignCenter)
             self._msg.setWordWrap(True)
             layout.addWidget(self._msg)
+
+        self._action_btn: QPushButton | None = None
+        if action_label and action_callback is not None:
+            self._action_btn = QPushButton(action_label)
+            self._action_btn.setObjectName("primary")
+            self._action_btn.setCursor(Qt.PointingHandCursor)
+            self._action_btn.clicked.connect(action_callback)
+            layout.addWidget(self._action_btn, alignment=Qt.AlignCenter)
 
         self._refresh_style()
         palette_signal().connect(self._refresh_style)

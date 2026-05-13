@@ -95,6 +95,8 @@ class RulesPage(BasePage):
                 icon="⚡",
                 title=i18n.t("no_rules_yet"),
                 message=i18n.t("no_rules_hint"),
+                action_label=i18n.t("new_rule"),
+                action_callback=self._add_new,
             ))
             self._list_layout.addStretch(1)
             return

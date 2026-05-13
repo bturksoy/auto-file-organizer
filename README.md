@@ -49,9 +49,11 @@ way. v2 makes that fixable from the UI:
 1. Grab `FileOrganizer.exe` from the [latest release](../../releases/latest).
 2. Double-click. There is no installer.
 
-The file is roughly 54 MB (PySide6 bundle). First launch unpacks to
+The file is roughly 58 MB (PySide6 bundle). First launch unpacks to
 `%TEMP%\_MEI*` and is briefly slower than subsequent runs — this is
-normal for PyInstaller `--onefile`.
+normal for PyInstaller `--onefile`. On first launch a short welcome
+wizard walks you through picking a folder and previewing what the app
+would do; it only ever appears once.
 
 ### SmartScreen and antivirus
 
@@ -110,6 +112,17 @@ In **Settings → Background mode**, pick one of three options:
 
 The tray menu has **Show window / Organize now / Pause / Quit**, and a
 Windows notification fires after each pass that actually moved files.
+
+### Polish
+
+- **First-run wizard** — three quick steps on first launch (welcome →
+  pick folder → preview) so a fresh install has something to do without
+  reading the README.
+- **Inline result banner + toast notifications** — Organize completion
+  shows a compact banner above the log; non-blocking toasts handle the
+  smaller "Restored 3 files" / "Profile saved" feedback so popups stop
+  interrupting flow. The full stats dialog only auto-opens for big
+  moves (≥10 files) where the per-category breakdown actually helps.
 
 ### Power features
 
