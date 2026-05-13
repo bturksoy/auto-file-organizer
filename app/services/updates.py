@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.core.utils import human_size  # noqa: F401  re-exported below
 
-APP_VERSION = "2.7.0"
+APP_VERSION = "2.8.0"
 UPDATE_API_URL = (
     "https://api.github.com/repos/bturksoy/auto-file-organizer/releases/latest"
 )

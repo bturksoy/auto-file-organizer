@@ -149,14 +149,20 @@ fuzzy fallback for fonts whose Unicode mappings are broken.
 
 UI strings and category folder names are defined in
 `resources/i18n/<code>.json`. Switch language from
-**Settings → Language**. Adding a new language is a copy-and-edit:
+**Settings → Language**. The app ships with English and Turkish; every
+user-facing string in the UI flows through one of ~330 keys in the
+bundles, so adding a new language is purely a translation exercise:
 
 1. Copy `resources/i18n/en.json` to `<code>.json`.
 2. Update `_meta.code` and `_meta.name`.
-3. Translate `strings` and `categories` values (keep the keys).
+3. Translate the `strings` block values (keep the keys); same for
+   `categories`.
 4. Restart — the new language appears in the picker automatically.
 
-See [resources/i18n/README.md](resources/i18n/README.md) for the full
+Keys live under dotted namespaces (`page.settings.*`, `dialog.*`,
+`widget.*`, `action.*`, `common.*`) so translators can find what they're
+working on without spelunking through Python. See
+[resources/i18n/README.md](resources/i18n/README.md) for the full
 contributor guide.
 
 ## Build from source

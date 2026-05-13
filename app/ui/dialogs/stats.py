@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.organize import OrganizeResult
 from app.core.utils import human_size
 
@@ -23,22 +24,23 @@ class StatsDialog(QDialog):
     def __init__(self, result: OrganizeResult, *,
                  category_lookup=None, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Organize complete")
+        self.setWindowTitle(i18n.t("dialog.stats.title"))
         self.setMinimumWidth(420)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 16)
         outer.setSpacing(10)
 
-        moved = QLabel(f"<b>{result.moved}</b> file(s) moved")
+        moved = QLabel(i18n.t("dialog.stats.moved", n=result.moved))
         moved.setStyleSheet("font-size: 16px;")
         outer.addWidget(moved)
 
-        summary = QLabel(
-            f"Total size: {human_size(result.bytes_total)}    ·    "
-            f"Elapsed: {_format_secs(result.elapsed_seconds)}    ·    "
-            f"Errors: {result.errors}"
-        )
+        summary = QLabel(i18n.t(
+            "dialog.stats.summary",
+            size=human_size(result.bytes_total),
+            elapsed=_format_secs(result.elapsed_seconds),
+            errors=result.errors,
+        ))
         summary.setStyleSheet("color: #9ba0ab;")
         outer.addWidget(summary)
 

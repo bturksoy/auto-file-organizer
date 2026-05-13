@@ -66,7 +66,7 @@ class RulesPage(BasePage):
         self._refresh()
 
     def build_body(self, layout: QVBoxLayout) -> None:
-        layout.addWidget(InfoBanner(i18n.t("page_rules_banner")))
+        layout.addWidget(InfoBanner(i18n.t("page.rules.banner")))
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -175,8 +175,8 @@ class RulesPage(BasePage):
         if not target:
             return
         confirm = QMessageBox.question(
-            self, "Delete rule",
-            f"Remove the rule '{target.name}'?",
+            self, i18n.t("dialog.delete_rule.title"),
+            i18n.t("dialog.delete_rule.body", name=target.name),
         )
         if confirm == QMessageBox.Yes:
             profile.rules = [r for r in profile.rules if r.id != rule_id]

@@ -131,9 +131,8 @@ class CategoriesPage(BasePage):
         if not target or target.locked:
             return
         confirm = QMessageBox.question(
-            self, "Delete category",
-            f"Remove the '{target.name}' category? Files already in this "
-            "category folder are not affected.",
+            self, i18n.t("dialog.delete_category.title"),
+            i18n.t("dialog.delete_category.body", name=target.name),
         )
         if confirm == QMessageBox.Yes:
             profile.categories = [

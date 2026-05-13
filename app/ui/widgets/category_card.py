@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import Category
 from app.ui.icons import make_icon, make_pixmap
 from app.ui.theme import active_palette, palette_signal
@@ -33,13 +34,13 @@ class CategoryCard(Card):
         header.setSpacing(8)
 
         if not category.locked:
-            self._up_btn = self._mk_icon_button("Move up (higher priority)")
+            self._up_btn = self._mk_icon_button(i18n.t("widget.tooltip.move_up"))
             self._up_btn.clicked.connect(
                 lambda: self.move_up_requested.emit(self._category.id))
             self._up_btn.setEnabled(can_move_up)
             header.addWidget(self._up_btn)
 
-            self._down_btn = self._mk_icon_button("Move down (lower priority)")
+            self._down_btn = self._mk_icon_button(i18n.t("widget.tooltip.move_down"))
             self._down_btn.clicked.connect(
                 lambda: self.move_down_requested.emit(self._category.id))
             self._down_btn.setEnabled(can_move_down)
@@ -62,15 +63,17 @@ class CategoryCard(Card):
         if category.locked:
             self._lock = QLabel()
             self._lock.setFixedSize(20, 20)
-            self._lock.setToolTip("Built-in category (cannot be deleted)")
+            self._lock.setToolTip(i18n.t("widget.category_card.locked_tooltip"))
             header.addWidget(self._lock)
         else:
-            self.edit_btn = self._mk_icon_button("Edit category")
+            self.edit_btn = self._mk_icon_button(
+                i18n.t("widget.tooltip.edit_category"))
             self.edit_btn.clicked.connect(
                 lambda: self.edit_requested.emit(self._category.id))
             header.addWidget(self.edit_btn)
 
-            self.del_btn = self._mk_icon_button("Delete category")
+            self.del_btn = self._mk_icon_button(
+                i18n.t("widget.tooltip.delete_category"))
             self.del_btn.clicked.connect(
                 lambda: self.delete_requested.emit(self._category.id))
             header.addWidget(self.del_btn)
@@ -85,9 +88,11 @@ class CategoryCard(Card):
             chip_layout.addWidget(Chip(ext))
         leftover = len(category.extensions) - max_chips
         if leftover > 0:
-            chip_layout.addWidget(Chip(f"+{leftover} more"))
+            chip_layout.addWidget(Chip(
+                i18n.t("widget.category_card.more_chips", n=leftover)))
         if not category.extensions:
-            chip_layout.addWidget(Chip("content-only"))
+            chip_layout.addWidget(Chip(
+                i18n.t("widget.category_card.content_only")))
         self.layout().addWidget(chip_holder)
 
         # Target folder row

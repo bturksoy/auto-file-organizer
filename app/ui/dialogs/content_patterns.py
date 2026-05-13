@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import ContentPattern, Profile
 
 
@@ -32,7 +33,7 @@ class ContentPatternsDialog(QDialog):
 
     def __init__(self, profile: Profile, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Content patterns")
+        self.setWindowTitle(i18n.t("dialog.content_patterns.title"))
         self.setMinimumSize(720, 480)
         self._profile = profile
         # Work on a clone so Cancel discards everything cleanly.
@@ -55,11 +56,7 @@ class ContentPatternsDialog(QDialog):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
 
-        intro = QLabel(
-            "Content patterns are reusable keyword detectors that scan the "
-            "text of PDF and DOCX files. Reference one from a rule by adding "
-            "a 'Content matches' condition."
-        )
+        intro = QLabel(i18n.t("dialog.content_patterns.intro"))
         intro.setWordWrap(True)
         intro.setStyleSheet("color: #9ba0ab;")
         outer.addWidget(intro)
@@ -76,9 +73,9 @@ class ContentPatternsDialog(QDialog):
         left_layout.addWidget(self._list, stretch=1)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton("+ New")
+        add_btn = QPushButton(i18n.t("dialog.content_patterns.new_btn"))
         add_btn.clicked.connect(self._add_pattern)
-        rm_btn = QPushButton("Remove")
+        rm_btn = QPushButton(i18n.t("action.remove"))
         rm_btn.clicked.connect(self._remove_pattern)
         btn_row.addWidget(add_btn)
         btn_row.addWidget(rm_btn)
@@ -90,31 +87,31 @@ class ContentPatternsDialog(QDialog):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(8, 0, 0, 0)
 
-        right_layout.addWidget(QLabel("Name"))
+        right_layout.addWidget(QLabel(i18n.t("common.name")))
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("e.g. Invoice, Contract, Report")
+        self._name_edit.setPlaceholderText(
+            i18n.t("dialog.content_patterns.placeholder.name"))
         self._name_edit.textChanged.connect(self._on_name_changed)
         right_layout.addWidget(self._name_edit)
 
-        right_layout.addWidget(QLabel(
-            "Strong keywords (any one hit = match) — comma or newline separated"))
+        right_layout.addWidget(QLabel(i18n.t("dialog.content_patterns.strong_label")))
         self._strong_edit = QTextEdit()
-        self._strong_edit.setPlaceholderText("invoice, fatura, bill")
+        self._strong_edit.setPlaceholderText(
+            i18n.t("dialog.content_patterns.placeholder.strong"))
         self._strong_edit.setFixedHeight(80)
         self._strong_edit.textChanged.connect(self._on_strong_changed)
         right_layout.addWidget(self._strong_edit)
 
-        right_layout.addWidget(QLabel(
-            "Weak keywords (need N hits to match)"))
+        right_layout.addWidget(QLabel(i18n.t("dialog.content_patterns.weak_label")))
         self._weak_edit = QTextEdit()
         self._weak_edit.setPlaceholderText(
-            "amount due, payment terms, total, vat")
+            i18n.t("dialog.content_patterns.placeholder.weak"))
         self._weak_edit.setFixedHeight(80)
         self._weak_edit.textChanged.connect(self._on_weak_changed)
         right_layout.addWidget(self._weak_edit)
 
         thresh_row = QHBoxLayout()
-        thresh_row.addWidget(QLabel("Weak hits required:"))
+        thresh_row.addWidget(QLabel(i18n.t("dialog.content_patterns.weak_thresh_label")))
         self._thresh_spin = QSpinBox()
         self._thresh_spin.setRange(1, 20)
         self._thresh_spin.valueChanged.connect(self._on_thresh_changed)
@@ -142,7 +139,7 @@ class ContentPatternsDialog(QDialog):
         self._list.blockSignals(True)
         self._list.clear()
         for p in self._patterns:
-            item = QListWidgetItem(p.name or "(unnamed)")
+            item = QListWidgetItem(self._label(p.name))
             self._list.addItem(item)
         self._list.blockSignals(False)
         if self._patterns:
@@ -151,6 +148,9 @@ class ContentPatternsDialog(QDialog):
         else:
             self._current = None
             self._sync_form()
+
+    def _label(self, name: str) -> str:
+        return name or i18n.t("common.unnamed")
 
     def _on_row_changed(self, row: int) -> None:
         if 0 <= row < len(self._patterns):
@@ -161,7 +161,8 @@ class ContentPatternsDialog(QDialog):
 
     def _add_pattern(self) -> None:
         name, ok = QInputDialog.getText(
-            self, "New pattern", "Pattern name:")
+            self, i18n.t("dialog.content_patterns.new_title"),
+            i18n.t("dialog.content_patterns.new_prompt"))
         if not ok or not name.strip():
             return
         p = ContentPattern(
@@ -176,9 +177,9 @@ class ContentPatternsDialog(QDialog):
         if self._current is None:
             return
         confirm = QMessageBox.question(
-            self, "Remove pattern",
-            f"Remove the pattern '{self._current.name}'? Any rules using "
-            "it will stop matching until you point them elsewhere.",
+            self, i18n.t("dialog.content_patterns.remove_title"),
+            i18n.t("dialog.content_patterns.remove_body",
+                   name=self._current.name),
         )
         if confirm != QMessageBox.Yes:
             return
@@ -225,7 +226,7 @@ class ContentPatternsDialog(QDialog):
         # Update list label without losing selection.
         row = self._list.currentRow()
         if 0 <= row < self._list.count():
-            self._list.item(row).setText(self._current.name or "(unnamed)")
+            self._list.item(row).setText(self._label(self._current.name))
 
     def _on_strong_changed(self) -> None:
         if self._current is None:

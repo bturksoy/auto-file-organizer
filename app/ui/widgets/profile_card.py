@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout,
 )
 
+from app.core.i18n import i18n
 from app.core.models import Profile
 from app.ui.icons import make_icon
 from app.ui.theme import active_palette, palette_signal
@@ -36,19 +37,20 @@ class ProfileCard(Card):
         # Color dot reflects the profile.color field — set when creating /
         # editing a profile, makes the list scannable at a glance.
         name_row.addWidget(ColorDot(profile.color, size=12))
-        name = QLabel(profile.name or "Untitled")
+        name = QLabel(profile.name or i18n.t("widget.profile_card.untitled"))
         name.setStyleSheet("font-size: 14px; font-weight: 600;")
         name_row.addWidget(name)
         if is_active:
-            badge = QLabel("Active")
+            badge = QLabel(i18n.t("widget.profile_card.active"))
             badge.setObjectName("chipAccent")
             name_row.addWidget(badge)
         name_row.addStretch(1)
         text_col.addLayout(name_row)
 
-        self._meta = QLabel(
-            f"{len(profile.rules)} rules · {len(profile.categories)} categories"
-        )
+        self._meta = QLabel(i18n.t(
+            "widget.profile_card.meta",
+            n=len(profile.rules), m=len(profile.categories),
+        ))
         text_col.addWidget(self._meta)
         self._restyle()
         palette_signal().connect(self._restyle)
@@ -56,13 +58,13 @@ class ProfileCard(Card):
         row.addLayout(text_col, stretch=1)
 
         if is_active:
-            disabled = QPushButton("Active")
+            disabled = QPushButton(i18n.t("widget.profile_card.active"))
             disabled.setObjectName("secondary")
             disabled.setEnabled(False)
             disabled.setFixedWidth(90)
             row.addWidget(disabled)
         else:
-            switch_btn = QPushButton("Switch")
+            switch_btn = QPushButton(i18n.t("widget.profile_card.switch_btn"))
             switch_btn.setObjectName("primary")
             switch_btn.setCursor(Qt.PointingHandCursor)
             switch_btn.setFixedWidth(90)
@@ -75,7 +77,7 @@ class ProfileCard(Card):
         self._menu_btn.setFixedSize(34, 30)
         self._menu_btn.setIconSize(QSize(16, 16))
         self._menu_btn.setCursor(Qt.PointingHandCursor)
-        self._menu_btn.setToolTip("Profile actions")
+        self._menu_btn.setToolTip(i18n.t("widget.profile_card.tooltip.menu"))
         self._menu_btn.clicked.connect(lambda: self._open_menu(self._menu_btn))
         row.addWidget(self._menu_btn)
 
@@ -89,13 +91,13 @@ class ProfileCard(Card):
 
     def _open_menu(self, anchor: QPushButton) -> None:
         menu = QMenu(self)
-        menu.addAction("Rename",
+        menu.addAction(i18n.t("action.rename"),
                        lambda: self.rename_requested.emit(self._profile.id))
-        menu.addAction("Duplicate",
+        menu.addAction(i18n.t("action.duplicate"),
                        lambda: self.duplicate_requested.emit(self._profile.id))
-        menu.addAction("Export…",
+        menu.addAction(i18n.t("action.export"),
                        lambda: self.export_requested.emit(self._profile.id))
         menu.addSeparator()
-        menu.addAction("Delete",
+        menu.addAction(i18n.t("action.delete"),
                        lambda: self.delete_requested.emit(self._profile.id))
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomRight()))

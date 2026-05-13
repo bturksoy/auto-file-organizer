@@ -4,8 +4,10 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout,
 )
+
+from app.core.i18n import i18n
 
 
 class AboutDialog(QDialog):
@@ -15,7 +17,7 @@ class AboutDialog(QDialog):
     def __init__(self, *, icon_path: str | None = None,
                  version: str = "?", parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("About Auto File Organizer")
+        self.setWindowTitle(i18n.t("dialog.about.title"))
         self.setMinimumWidth(420)
 
         outer = QHBoxLayout(self)
@@ -33,30 +35,28 @@ class AboutDialog(QDialog):
         body = QVBoxLayout()
         body.setSpacing(6)
 
-        title = QLabel("Auto File Organizer")
+        title = QLabel(i18n.t("dialog.about.heading"))
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         body.addWidget(title)
 
-        ver = QLabel(f"Version {version}")
+        ver = QLabel(i18n.t("dialog.about.version", version=version))
         ver.setStyleSheet("color: #9ba0ab;")
         body.addWidget(ver)
 
-        desc = QLabel(
-            "Sorts a folder's files into category subfolders using rules, "
-            "extension categories, and PDF/DOCX content inspection."
-        )
+        desc = QLabel(i18n.t("dialog.about.description"))
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #c5c9d4;")
         body.addWidget(desc)
 
         body.addSpacing(8)
 
+        github_label = i18n.t("dialog.about.link_github")
+        bmc_label = i18n.t("dialog.about.link_bmc")
+        license_label = i18n.t("dialog.about.license")
         lic = QLabel(
-            f"<a href='{self.REPO_URL}' style='color:#7c8cff;'>"
-            "GitHub repository</a><br>"
-            f"<a href='{self.BMC_URL}' style='color:#7c8cff;'>"
-            "Buy me a coffee</a><br>"
-            "Licensed under GNU GPL v3.0"
+            f"<a href='{self.REPO_URL}' style='color:#7c8cff;'>{github_label}</a><br>"
+            f"<a href='{self.BMC_URL}' style='color:#7c8cff;'>{bmc_label}</a><br>"
+            f"{license_label}"
         )
         lic.setOpenExternalLinks(True)
         lic.setTextFormat(Qt.RichText)
@@ -64,10 +64,6 @@ class AboutDialog(QDialog):
 
         body.addStretch(1)
         outer.addLayout(body, stretch=1)
-
-        wrapper = QWidget()
-        wrapper_layout = QVBoxLayout(wrapper)
-        wrapper_layout.setContentsMargins(0, 0, 0, 0)
 
         btn_row = QDialogButtonBox(QDialogButtonBox.Close)
         btn_row.rejected.connect(self.reject)

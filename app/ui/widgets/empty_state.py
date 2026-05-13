@@ -4,13 +4,16 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from app.core.i18n import i18n
 from app.ui.theme import active_palette, palette_signal
 
 
 class EmptyState(QWidget):
-    def __init__(self, *, icon: str = "✦", title: str = "Nothing here yet",
+    def __init__(self, *, icon: str = "✦", title: str | None = None,
                  message: str = "", parent=None) -> None:
         super().__init__(parent)
+        if title is None:
+            title = i18n.t("widget.empty_state.default_title")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 36, 20, 36)

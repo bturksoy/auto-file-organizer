@@ -95,7 +95,7 @@ class ProfilesPage(BasePage):
         if not target:
             return
         dlg = ProfileNameDialog(
-            title="Edit profile", initial=target.name,
+            title=i18n.t("dialog.profile_edit.title"), initial=target.name,
             initial_color=target.color, parent=self,
         )
         if dlg.exec():
@@ -110,7 +110,7 @@ class ProfilesPage(BasePage):
             return
         clone = copy.deepcopy(target)
         clone.id = uuid.uuid4().hex
-        clone.name = f"{target.name} (copy)"
+        clone.name = i18n.t("page.profiles.copy_suffix", name=target.name)
         self._state.add_profile(clone)
 
     def _delete(self, profile_id: str) -> None:
@@ -119,14 +119,13 @@ class ProfilesPage(BasePage):
             return
         if len(self._state.data.profiles) <= 1:
             QMessageBox.information(
-                self, "Cannot delete",
-                "At least one profile must exist.",
+                self, i18n.t("dialog.profile_cannot_delete.title"),
+                i18n.t("dialog.profile_cannot_delete.body"),
             )
             return
         confirm = QMessageBox.question(
-            self, "Delete profile",
-            f"Remove the profile '{target.name}'? Files already on disk "
-            "are not touched.",
+            self, i18n.t("dialog.delete_profile.title"),
+            i18n.t("dialog.delete_profile.body", name=target.name),
         )
         if confirm == QMessageBox.Yes:
             self._state.remove_profile(profile_id)
@@ -137,7 +136,8 @@ class ProfilesPage(BasePage):
             return
         suggested = f"{target.name}.profile.json"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export profile", suggested, "Profile JSON (*.json)")
+            self, i18n.t("dialog.export_profile.caption"), suggested,
+            i18n.t("dialog.profile.filter_json"))
         if not path:
             return
         try:
@@ -146,11 +146,12 @@ class ProfilesPage(BasePage):
                 encoding="utf-8",
             )
         except OSError as exc:
-            QMessageBox.warning(self, "Export failed", str(exc))
+            QMessageBox.warning(self, i18n.t("dialog.export_failed.title"), str(exc))
 
     def _import_profile(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import profile", "", "Profile JSON (*.json)")
+            self, i18n.t("dialog.import_profile.caption"), "",
+            i18n.t("dialog.profile.filter_json"))
         if not path:
             return
         try:
@@ -159,7 +160,7 @@ class ProfilesPage(BasePage):
             imported.id = uuid.uuid4().hex
             self._state.add_profile(imported)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "Import failed", str(exc))
+            QMessageBox.warning(self, i18n.t("dialog.import_failed.title"), str(exc))
 
     def _find(self, profile_id: str) -> Profile | None:
         for p in self._state.data.profiles:

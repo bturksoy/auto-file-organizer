@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout,
 )
 
+from app.core.i18n import i18n
 from app.core.organize import UNDO_LOG_NAME, load_undo_log, undo_last
 
 
@@ -25,14 +26,14 @@ class UndoHistoryDialog(QDialog):
     def __init__(self, folder: Path, parent=None) -> None:
         super().__init__(parent)
         self._folder = folder
-        self.setWindowTitle("Undo history")
+        self.setWindowTitle(i18n.t("dialog.undo_history.title"))
         self.setMinimumSize(520, 360)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
         layout.addWidget(QLabel(
-            f"Past organize runs in <b>{folder.name}</b> (newest first)."
+            i18n.t("dialog.undo_history.intro", folder=folder.name)
         ))
 
         self._list = QListWidget()
@@ -48,17 +49,16 @@ class UndoHistoryDialog(QDialog):
         layout.addWidget(self._summary)
 
         actions = QHBoxLayout()
-        self._undo_btn = QPushButton("Undo latest")
+        self._undo_btn = QPushButton(i18n.t("dialog.undo_history.undo_btn"))
         self._undo_btn.setObjectName("primary")
         self._undo_btn.setCursor(Qt.PointingHandCursor)
         self._undo_btn.clicked.connect(self._on_undo)
         actions.addWidget(self._undo_btn)
 
-        self._clear_btn = QPushButton("Clear history")
+        self._clear_btn = QPushButton(i18n.t("dialog.undo_history.clear_btn"))
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.setCursor(Qt.PointingHandCursor)
-        self._clear_btn.setToolTip(
-            "Delete the undo log file. Files are not affected.")
+        self._clear_btn.setToolTip(i18n.t("dialog.undo_history.tooltip.clear"))
         self._clear_btn.clicked.connect(self._on_clear)
         actions.addWidget(self._clear_btn)
 
@@ -80,17 +80,19 @@ class UndoHistoryDialog(QDialog):
             move_count = len(moves) - copies
             label_parts = []
             if move_count:
-                label_parts.append(f"{move_count} moved")
+                label_parts.append(
+                    i18n.t("dialog.undo_history.moved", n=move_count))
             if copies:
-                label_parts.append(f"{copies} copied")
-            summary = ", ".join(label_parts) or "no operations"
-            tag = " (latest)" if i == 0 else ""
+                label_parts.append(
+                    i18n.t("dialog.undo_history.copied", n=copies))
+            summary = ", ".join(label_parts) or i18n.t("dialog.undo_history.no_ops")
+            tag = i18n.t("dialog.undo_history.latest_tag") if i == 0 else ""
             item = QListWidgetItem(f"{ts}  ·  {summary}{tag}")
             item.setData(Qt.UserRole, entry)
             self._list.addItem(item)
 
         self._summary.setText(
-            f"{len(history)} entr{'y' if len(history) == 1 else 'ies'} on disk."
+            i18n.t("dialog.undo_history.count", n=len(history))
         )
         has_any = bool(history)
         self._undo_btn.setEnabled(has_any)
@@ -99,16 +101,16 @@ class UndoHistoryDialog(QDialog):
     def _on_undo(self) -> None:
         restored, errors = undo_last(self._folder)
         QMessageBox.information(
-            self, "Undo",
-            f"Restored {restored} file(s)\nErrors: {errors}",
+            self, i18n.t("dialog.undo.title"),
+            i18n.t("dialog.undo_complete.body",
+                   restored=restored, errors=errors),
         )
         self._refresh()
 
     def _on_clear(self) -> None:
         confirm = QMessageBox.question(
-            self, "Clear history",
-            "Delete the undo log? The files already on disk stay where they "
-            "are; you just lose the ability to roll back from this dialog.",
+            self, i18n.t("dialog.undo_history.clear_title"),
+            i18n.t("dialog.undo_history.clear_body"),
         )
         if confirm != QMessageBox.Yes:
             return
@@ -116,5 +118,6 @@ class UndoHistoryDialog(QDialog):
         try:
             log.unlink(missing_ok=True)
         except OSError as exc:
-            QMessageBox.warning(self, "Clear history", str(exc))
+            QMessageBox.warning(
+                self, i18n.t("dialog.undo_history.clear_title"), str(exc))
         self._refresh()

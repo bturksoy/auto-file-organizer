@@ -8,10 +8,11 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QVBoxLayout,
 )
 
+from app.core.i18n import i18n
 from app.core.templates import template_choices
 
 
-def _color_button(initial: str, *, on_change) -> tuple[QPushButton, dict]:
+def _color_button(initial: str) -> tuple[QPushButton, dict]:
     """Make a swatch-style button that opens a color picker. Returns the
     button and a small holder dict so the caller can read the chosen value."""
     state = {"color": initial}
@@ -30,11 +31,11 @@ def _color_button(initial: str, *, on_change) -> tuple[QPushButton, dict]:
     apply_style()
 
     def pick() -> None:
-        c = QColorDialog.getColor(QColor(state["color"]), btn, "Pick a color")
+        c = QColorDialog.getColor(
+            QColor(state["color"]), btn, i18n.t("dialog.pick_color.title"))
         if c.isValid():
             state["color"] = c.name()
             apply_style()
-            on_change(state["color"])
 
     btn.clicked.connect(pick)
     return btn, state
@@ -43,21 +44,20 @@ def _color_button(initial: str, *, on_change) -> tuple[QPushButton, dict]:
 class ProfileNameDialog(QDialog):
     """Rename an existing profile (optional color edit)."""
 
-    def __init__(self, *, title: str = "Profile", initial: str = "",
+    def __init__(self, *, title: str | None = None, initial: str = "",
                  initial_color: str = "#7c8cff", parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setWindowTitle(title or i18n.t("dialog.profile.default_title"))
         self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Name"))
+        layout.addWidget(QLabel(i18n.t("common.name")))
         self.name_edit = QLineEdit(initial)
-        self.name_edit.setPlaceholderText("e.g. Work, Downloads, Photos")
+        self.name_edit.setPlaceholderText(i18n.t("dialog.profile_edit.placeholder.name"))
         layout.addWidget(self.name_edit)
 
-        layout.addWidget(QLabel("Color"))
-        self._color_btn, self._color_state = _color_button(
-            initial_color, on_change=lambda _: None)
+        layout.addWidget(QLabel(i18n.t("common.color")))
+        self._color_btn, self._color_state = _color_button(initial_color)
         layout.addWidget(self._color_btn)
 
         buttons = QDialogButtonBox(
@@ -89,7 +89,7 @@ class ProfileCreateDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("New profile")
+        self.setWindowTitle(i18n.t("dialog.profile_create.title"))
         self.setMinimumWidth(440)
 
         # Pick a different starting color each time for visual variety
@@ -97,25 +97,22 @@ class ProfileCreateDialog(QDialog):
         initial_color = random.choice(self.DEFAULT_COLORS)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Name"))
+        layout.addWidget(QLabel(i18n.t("common.name")))
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("e.g. Work")
+        self.name_edit.setPlaceholderText(i18n.t("dialog.profile_create.placeholder.name"))
         layout.addWidget(self.name_edit)
 
-        layout.addWidget(QLabel("Color"))
-        self._color_btn, self._color_state = _color_button(
-            initial_color, on_change=lambda _: None)
+        layout.addWidget(QLabel(i18n.t("common.color")))
+        self._color_btn, self._color_state = _color_button(initial_color)
         layout.addWidget(self._color_btn)
 
-        layout.addWidget(QLabel("Start from"))
+        layout.addWidget(QLabel(i18n.t("dialog.profile_create.start_from")))
         self.template_combo = QComboBox()
         for key, label in template_choices():
             self.template_combo.addItem(label, userData=key)
         layout.addWidget(self.template_combo)
 
-        hint = QLabel(
-            "Templates pre-fill rules and category target folders. You can "
-            "edit everything afterwards.")
+        hint = QLabel(i18n.t("dialog.profile_create.hint"))
         hint.setStyleSheet("color: #9ba0ab;")
         hint.setWordWrap(True)
         layout.addWidget(hint)

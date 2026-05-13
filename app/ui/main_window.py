@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.state import AppState
 from app.services.updates import APP_VERSION
 from app.ui.dialogs.about import AboutDialog
@@ -26,7 +27,7 @@ class MainWindow(QMainWindow):
     def __init__(self, state: AppState) -> None:
         super().__init__()
         self._state = state
-        self.setWindowTitle("Auto File Organizer")
+        self.setWindowTitle(i18n.t("sidebar.app_title"))
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
         self.setAcceptDrops(True)
@@ -123,12 +124,9 @@ class MainWindow(QMainWindow):
         self._state.set_theme("light" if current == "dark" else "dark")
 
     def _show_about(self) -> None:
-        from app.main import app_icon
-        icon = app_icon()
-        # The icon QIcon doesn't give us a pixmap path; resolve via the
-        # bundled file directly so the dialog can show a large preview.
-        from app.main import _resources_dir
-        png = _resources_dir() / "icon.png"
+        # Resolve the bundled icon path so the dialog can show a large preview.
+        from app.core.utils import resources_dir
+        png = resources_dir() / "icon.png"
         AboutDialog(
             icon_path=str(png) if png.is_file() else None,
             version=APP_VERSION,
@@ -143,7 +141,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(24, 10, 18, 10)
         layout.setSpacing(8)
 
-        breadcrumb = QLabel("→  Auto File Organizer")
+        breadcrumb = QLabel(i18n.t("topbar.breadcrumb"))
         breadcrumb.setObjectName("topBarTitle")
         layout.addWidget(breadcrumb)
         layout.addStretch(1)
@@ -152,17 +150,15 @@ class MainWindow(QMainWindow):
         self._theme_button.setObjectName("iconBtn")
         self._theme_button.setFixedSize(34, 34)
         self._theme_button.setCursor(Qt.PointingHandCursor)
-        self._theme_button.setToolTip("Toggle dark / light theme (Ctrl+T)")
+        self._theme_button.setToolTip(i18n.t("topbar.tooltip.theme_toggle"))
         self._theme_button.clicked.connect(self._toggle_theme)
         self._refresh_theme_button_glyph()
         layout.addWidget(self._theme_button)
 
-        self.folder_button = QPushButton("\U0001F4C1  Pick folder…")
+        self.folder_button = QPushButton("\U0001F4C1 " + i18n.t("topbar.pick_folder"))
         self.folder_button.setObjectName("folderPicker")
         self.folder_button.setCursor(Qt.PointingHandCursor)
-        self.folder_button.setToolTip(
-            "Choose a folder to scan. You can also drag and drop one anywhere "
-            "in this window.")
+        self.folder_button.setToolTip(i18n.t("topbar.tooltip.pick_folder"))
         self.folder_button.clicked.connect(self._pick_folder)
         layout.addWidget(self.folder_button)
         self._state.theme_changed.connect(
@@ -192,11 +188,14 @@ class MainWindow(QMainWindow):
     def _refresh_status(self) -> None:
         profile = self._state.active_profile()
         if profile:
-            self._status_profile.setText(f"Profile: {profile.name}")
-            mode = profile.settings.organization_mode.replace("_", " ")
-            self._status_mode.setText(f"Mode: {mode}")
+            self._status_profile.setText(
+                i18n.t("statusbar.profile", name=profile.name))
+            mode_label = i18n.t(
+                f"settings.org_mode.{profile.settings.organization_mode}.label")
+            self._status_mode.setText(
+                i18n.t("statusbar.mode", mode=mode_label))
         else:
-            self._status_profile.setText("No profile")
+            self._status_profile.setText(i18n.t("statusbar.no_profile"))
             self._status_mode.setText("")
 
     def _on_nav(self, key: str) -> None:
@@ -210,14 +209,16 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentWidget(page)
 
     def _pick_folder(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Select folder")
+        chosen = QFileDialog.getExistingDirectory(
+            self, i18n.t("dialog.pick_folder.caption"))
         if chosen:
             self._state.set_folder(Path(chosen))
 
     def _on_folder_changed(self, folder: Path | None) -> None:
         if not folder:
-            self.folder_button.setText("\U0001F4C1  Pick folder…")
-            self._status_folder.setText("No folder")
+            self.folder_button.setText(
+                "\U0001F4C1 " + i18n.t("topbar.pick_folder"))
+            self._status_folder.setText(i18n.t("statusbar.no_folder"))
             return
         path_str = str(folder)
         display = "…" + path_str[-46:] if len(path_str) > 48 else path_str

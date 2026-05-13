@@ -16,20 +16,7 @@ from app.ui.widgets.card import Card
 from app.ui.widgets.toggle import Toggle
 
 
-ORG_MODE_LABELS = {
-    "rules_then_categories": (
-        "Rules first, then categories",
-        "Recommended - Rules are checked first, unmatched files use categories",
-    ),
-    "categories_only": (
-        "Categories only",
-        "Simple mode - Only use category-based organization",
-    ),
-    "rules_only": (
-        "Rules only",
-        "Advanced - Only files matching rules are organized",
-    ),
-}
+# Org-mode labels come from i18n: settings.org_mode.<id>.label / .hint.
 
 
 class SettingsPage(BasePage):
@@ -74,10 +61,10 @@ class SettingsPage(BasePage):
 
     def _build_scan_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("SCANNING"))
+        card.layout().addWidget(self._h2(i18n.t("page.settings.section_scanning")))
 
         row1 = QHBoxLayout()
-        title = QLabel("Recursive scan (include subfolders)")
+        title = QLabel(i18n.t("page.settings.recursive_title"))
         title.setStyleSheet("font-size: 14px; font-weight: 600;")
         row1.addWidget(title)
         row1.addStretch(1)
@@ -86,17 +73,13 @@ class SettingsPage(BasePage):
         row1.addWidget(self._recursive_toggle)
         card.layout().addLayout(row1)
 
-        hint1 = QLabel(
-            "When on, the scanner descends into subfolders but never enters "
-            "category folders this profile owns. Useful for flattening a "
-            "messy tree."
-        )
+        hint1 = QLabel(i18n.t("page.settings.recursive_hint"))
         hint1.setStyleSheet("color: #9ba0ab;")
         hint1.setWordWrap(True)
         card.layout().addWidget(hint1)
 
         row2 = QHBoxLayout()
-        title2 = QLabel("Inspect PDF / DOCX content for CV detection")
+        title2 = QLabel(i18n.t("page.settings.pdf_inspect_title"))
         title2.setStyleSheet("font-size: 14px; font-weight: 600;")
         row2.addWidget(title2)
         row2.addStretch(1)
@@ -105,10 +88,7 @@ class SettingsPage(BasePage):
         row2.addWidget(self._pdf_toggle)
         card.layout().addLayout(row2)
 
-        hint2 = QLabel(
-            "Opens PDFs and Word documents to find CV-like keywords. Turn "
-            "off if you want a faster scan and never want content inspection."
-        )
+        hint2 = QLabel(i18n.t("page.settings.pdf_inspect_hint"))
         hint2.setStyleSheet("color: #9ba0ab;")
         hint2.setWordWrap(True)
         card.layout().addWidget(hint2)
@@ -116,12 +96,8 @@ class SettingsPage(BasePage):
 
     def _build_content_patterns_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("CONTENT PATTERNS"))
-        hint = QLabel(
-            "Define reusable keyword detectors for PDF and DOCX files (like "
-            "the built-in CV detector). Reference them from rules using a "
-            "'Content matches' condition."
-        )
+        card.layout().addWidget(self._h2(i18n.t("page.settings.section_content_patterns")))
+        hint = QLabel(i18n.t("page.settings.content_patterns_hint"))
         hint.setStyleSheet("color: #9ba0ab;")
         hint.setWordWrap(True)
         card.layout().addWidget(hint)
@@ -133,7 +109,7 @@ class SettingsPage(BasePage):
 
         row = QHBoxLayout()
         row.addStretch(1)
-        btn = QPushButton("Manage patterns…")
+        btn = QPushButton(i18n.t("page.settings.manage_patterns_btn"))
         btn.clicked.connect(self._open_patterns_dialog)
         row.addWidget(btn)
         card.layout().addLayout(row)
@@ -167,15 +143,16 @@ class SettingsPage(BasePage):
 
     def _build_mode_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("ORGANIZATION MODE"))
-        sub = QLabel("Choose how files are matched for organization")
+        card.layout().addWidget(self._h2(i18n.t("page.settings.section_org_mode")))
+        sub = QLabel(i18n.t("page.settings.org_mode_hint"))
         sub.setStyleSheet("color: #9ba0ab;")
         card.layout().addWidget(sub)
 
         self._mode_group = QButtonGroup(card)
         self._mode_buttons: dict[str, QRadioButton] = {}
         for mode in ORG_MODES:
-            label, hint = ORG_MODE_LABELS[mode]
+            label = i18n.t(f"settings.org_mode.{mode}.label")
+            hint = i18n.t(f"settings.org_mode.{mode}.hint")
             btn = QRadioButton(label)
             btn.setCursor(Qt.PointingHandCursor)
             btn.toggled.connect(
@@ -194,11 +171,11 @@ class SettingsPage(BasePage):
         card = Card()
         header = QHBoxLayout()
         body = QVBoxLayout()
-        body.addWidget(self._h2("NOTIFICATIONS"))
-        title = QLabel("Show notifications when organizing")
+        body.addWidget(self._h2(i18n.t("page.settings.section_notifications")))
+        title = QLabel(i18n.t("page.settings.notif_title"))
         title.setStyleSheet("font-size: 14px; font-weight: 600;")
         body.addWidget(title)
-        hint = QLabel("Display a notification when files are organized")
+        hint = QLabel(i18n.t("page.settings.notif_hint"))
         hint.setStyleSheet("color: #9ba0ab;")
         body.addWidget(hint)
         header.addLayout(body, stretch=1)
@@ -210,26 +187,17 @@ class SettingsPage(BasePage):
 
     def _build_auto_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("BACKGROUND MODE"))
-        hint = QLabel(
-            "Pick how the app should organize new files in your watched "
-            "folders while the window is closed. Scheduled re-checks every "
-            "few minutes; real-time fires within seconds of a new file."
-        )
+        card.layout().addWidget(self._h2(i18n.t("page.settings.section_background")))
+        hint = QLabel(i18n.t("page.settings.background_hint"))
         hint.setStyleSheet("color: #9ba0ab;")
         hint.setWordWrap(True)
         card.layout().addWidget(hint)
 
         self._bg_group = QButtonGroup(card)
         self._bg_buttons: dict[str, QRadioButton] = {}
-        for key, label, desc in (
-            ("off",       "Off",
-             "The app only acts when you click Organize manually."),
-            ("scheduled", "Scheduled",
-             "Re-organize watched folders on a fixed interval."),
-            ("realtime",  "Real-time",
-             "Organize each new file as it arrives (uses watchdog)."),
-        ):
+        for key in ("off", "scheduled", "realtime"):
+            label = i18n.t(f"page.settings.bg_mode.{key}.label")
+            desc = i18n.t(f"page.settings.bg_mode.{key}.hint")
             btn = QRadioButton(label)
             btn.setCursor(Qt.PointingHandCursor)
             btn.toggled.connect(
@@ -245,7 +213,7 @@ class SettingsPage(BasePage):
             card.layout().addLayout(wrap)
 
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Scheduled interval (minutes):"))
+        row2.addWidget(QLabel(i18n.t("page.settings.bg_interval_label")))
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 1440)
         self._interval_spin.valueChanged.connect(self._on_interval_changed)
@@ -254,7 +222,7 @@ class SettingsPage(BasePage):
 
         self._tray_start_toggle = Toggle()
         self._tray_start_toggle.toggled.connect(self._on_tray_start_toggled)
-        row2.addWidget(QLabel("Start in tray:"))
+        row2.addWidget(QLabel(i18n.t("page.settings.start_in_tray_label")))
         row2.addWidget(self._tray_start_toggle)
         card.layout().addLayout(row2)
         return card
@@ -263,8 +231,8 @@ class SettingsPage(BasePage):
         card = Card()
         row = QHBoxLayout()
         body = QVBoxLayout()
-        body.addWidget(self._h2("LANGUAGE"))
-        body.addWidget(QLabel("Interface language"))
+        body.addWidget(self._h2(i18n.t("page.settings.section_language")))
+        body.addWidget(QLabel(i18n.t("page.settings.language_label")))
         row.addLayout(body, stretch=1)
         self._lang_combo = QComboBox()
         for code, name in i18n.languages.items():
@@ -278,17 +246,17 @@ class SettingsPage(BasePage):
         card = Card()
         row = QHBoxLayout()
         body = QVBoxLayout()
-        body.addWidget(self._h2("THEME"))
-        title = QLabel("Appearance")
+        body.addWidget(self._h2(i18n.t("page.settings.section_theme")))
+        title = QLabel(i18n.t("appearance"))
         title.setStyleSheet("font-size: 14px; font-weight: 600;")
         body.addWidget(title)
-        hint = QLabel("Switch between dark and light. Applies immediately.")
+        hint = QLabel(i18n.t("appearance_hint"))
         hint.setStyleSheet("color: #9ba0ab;")
         body.addWidget(hint)
         row.addLayout(body, stretch=1)
         self._theme_combo = QComboBox()
-        self._theme_combo.addItem("Dark", userData="dark")
-        self._theme_combo.addItem("Light", userData="light")
+        self._theme_combo.addItem(i18n.t("theme_dark"), userData="dark")
+        self._theme_combo.addItem(i18n.t("theme_light"), userData="light")
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         row.addWidget(self._theme_combo)
         card.layout().addLayout(row)
@@ -303,8 +271,8 @@ class SettingsPage(BasePage):
         card = Card()
         row = QHBoxLayout()
         body = QVBoxLayout()
-        body.addWidget(self._h2("UPDATES"))
-        body.addWidget(QLabel("Check for updates on startup"))
+        body.addWidget(self._h2(i18n.t("page.settings.section_updates")))
+        body.addWidget(QLabel(i18n.t("page.settings.check_updates_label")))
         row.addLayout(body, stretch=1)
         self._updates_toggle = Toggle()
         self._updates_toggle.toggled.connect(self._on_updates_toggled)
@@ -334,9 +302,8 @@ class SettingsPage(BasePage):
         self._tray_start_toggle.setChecked(s.start_in_tray)
         self._recursive_toggle.setChecked(s.recursive_scan)
         self._pdf_toggle.setChecked(s.inspect_pdf_docx)
-        n = len(profile.content_patterns)
         self._patterns_count_label.setText(
-            f"{n} pattern{'s' if n != 1 else ''} defined."
+            i18n.t("page.settings.patterns_count", n=len(profile.content_patterns))
         )
         # Language
         for i in range(self._lang_combo.count()):

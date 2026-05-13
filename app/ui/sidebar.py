@@ -7,28 +7,27 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.core.i18n import i18n
 from app.ui.icons import make_icon
 from app.ui.theme import active_palette, palette_signal
 
 
+# (key, label_i18n_key, icon)
 NAV_ITEMS = [
-    ("home", "Home", "home"),
-    ("folders", "Folders", "folder"),
-    ("rules", "Rules", "bolt"),
-    ("categories", "Categories", "list"),
-    ("profiles", "Profiles", "user"),
+    ("home",       "sidebar.home",       "home"),
+    ("folders",    "sidebar.folders",    "folder"),
+    ("rules",      "sidebar.rules",      "bolt"),
+    ("categories", "sidebar.categories", "list"),
+    ("profiles",   "sidebar.profiles",   "user"),
 ]
 
 FOOTER_PAGE_ITEMS = [
-    ("settings", "Settings", "gear"),
+    ("settings", "sidebar.settings", "gear"),
 ]
 
 FOOTER_ACTION_ITEMS = [
-    ("about", "About", "info"),
+    ("about", "sidebar.about", "info"),
 ]
-
-# Backwards-compat alias still consulted by older callers.
-FOOTER_ITEMS = FOOTER_PAGE_ITEMS
 
 
 class Sidebar(QFrame):
@@ -52,22 +51,25 @@ class Sidebar(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        title = QLabel("Auto File Organizer")
+        title = QLabel(i18n.t("sidebar.app_title"))
         title.setObjectName("appTitle")
         layout.addWidget(title)
 
-        for key, label, icon_key in NAV_ITEMS:
-            btn = self._make_nav_button(key, label, icon_key, checkable=True)
+        for key, label_key, icon_key in NAV_ITEMS:
+            btn = self._make_nav_button(
+                key, i18n.t(label_key), icon_key, checkable=True)
             layout.addWidget(btn)
 
         layout.addItem(
             QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        for key, label, icon_key in FOOTER_PAGE_ITEMS:
-            btn = self._make_nav_button(key, label, icon_key, checkable=True)
+        for key, label_key, icon_key in FOOTER_PAGE_ITEMS:
+            btn = self._make_nav_button(
+                key, i18n.t(label_key), icon_key, checkable=True)
             layout.addWidget(btn)
-        for key, label, icon_key in FOOTER_ACTION_ITEMS:
-            btn = self._make_nav_button(key, label, icon_key, checkable=False)
+        for key, label_key, icon_key in FOOTER_ACTION_ITEMS:
+            btn = self._make_nav_button(
+                key, i18n.t(label_key), icon_key, checkable=False)
             layout.addWidget(btn)
 
         layout.addSpacing(8)

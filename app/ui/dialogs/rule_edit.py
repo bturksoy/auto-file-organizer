@@ -16,30 +16,19 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import (
     ACTION_TYPES, CONDITION_LABELS, CONDITION_TYPES, Action, Category,
     Condition, ConditionGroup, Profile, Rule,
 )
 
 
-_CONDITION_HELP = {
-    "name_contains": "substring",
-    "name_starts_with": "prefix",
-    "name_ends_with": "suffix",
-    "name_regex": "regex pattern",
-    "extension_in": ".jpg, .png, .webp",
-    "path_contains": "subfolder name in source path",
-    "size_above_mb": "10",
-    "size_below_mb": "10",
-    "age_above_days": "30  (older than)",
-    "age_below_days": "30  (newer than)",
-    "content_matches": "Pick a pattern (manage from Settings)",
-}
+def _cond_help(condition_type: str) -> str:
+    return i18n.t(f"dialog.rule_edit.cond_help.{condition_type}")
 
-_ACTION_LABELS = {
-    "move_to_category": "Send to category",
-    "move_to_folder":   "Send to folder",
-}
+
+def _action_label(action_type: str) -> str:
+    return i18n.t(f"dialog.rule_edit.action.{action_type}")
 
 
 class _ConditionRow(QWidget):
@@ -61,8 +50,9 @@ class _ConditionRow(QWidget):
             from app.core.models import LEGACY_CONDITION_LABELS
             label = LEGACY_CONDITION_LABELS.get(
                 condition.type, condition.type)
-            self.type_combo.addItem(f"[legacy] {label}",
-                                    userData=condition.type)
+            self.type_combo.addItem(
+                i18n.t("dialog.rule_edit.legacy_prefix", label=label),
+                userData=condition.type)
 
         if condition:
             idx = self.type_combo.findData(condition.type)
@@ -97,7 +87,12 @@ class _ConditionRow(QWidget):
 
     def _on_type_changed(self) -> None:
         ct = self.type_combo.currentData()
-        self.value_edit.setPlaceholderText(_CONDITION_HELP.get(ct, ""))
+        # cond_help only defined for current CONDITION_TYPES; legacy types
+        # leave the placeholder empty rather than show a stale hint.
+        if ct in CONDITION_TYPES and ct != "content_matches":
+            self.value_edit.setPlaceholderText(_cond_help(ct))
+        else:
+            self.value_edit.setPlaceholderText("")
         is_pattern = ct == "content_matches"
         self.value_edit.setVisible(not is_pattern)
         self.pattern_combo.setVisible(is_pattern)
@@ -124,7 +119,9 @@ class RuleEditDialog(QDialog):
                  test_folder: Path | None = None,  # kept for API compat
                  parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Edit rule" if rule else "New rule")
+        self.setWindowTitle(
+            i18n.t("dialog.rule_edit.title_edit" if rule
+                   else "dialog.rule_edit.title_new"))
         self.setMinimumWidth(580)
 
         self._original = rule
@@ -136,16 +133,19 @@ class RuleEditDialog(QDialog):
         outer.addLayout(form)
 
         self.name_edit = QLineEdit(rule.name if rule else "")
-        self.name_edit.setPlaceholderText("e.g. Old invoices")
-        form.addRow("Rule name", self.name_edit)
+        self.name_edit.setPlaceholderText(i18n.t("dialog.rule_edit.placeholder.name"))
+        form.addRow(i18n.t("dialog.rule_edit.label.name"), self.name_edit)
 
         op_row = QHBoxLayout()
-        op_row.addWidget(self._section_label("Conditions"))
+        op_row.addWidget(self._section_label(
+            i18n.t("dialog.rule_edit.section.conditions")))
         op_row.addStretch(1)
-        op_row.addWidget(QLabel("Match:"))
+        op_row.addWidget(QLabel(i18n.t("dialog.rule_edit.match_label")))
         self.operator_combo = QComboBox()
-        self.operator_combo.addItem("All (AND)", userData="and")
-        self.operator_combo.addItem("Any (OR)", userData="or")
+        self.operator_combo.addItem(
+            i18n.t("dialog.rule_edit.match.all"), userData="and")
+        self.operator_combo.addItem(
+            i18n.t("dialog.rule_edit.match.any"), userData="or")
         if rule and rule.condition_root and rule.condition_root.operator == "or":
             self.operator_combo.setCurrentIndex(1)
         op_row.addWidget(self.operator_combo)
@@ -157,7 +157,7 @@ class RuleEditDialog(QDialog):
         self._conditions_layout.setSpacing(6)
         outer.addWidget(self._conditions_holder)
 
-        add_btn = QPushButton("+ Add condition")
+        add_btn = QPushButton(i18n.t("dialog.rule_edit.add_condition_btn"))
         add_btn.setObjectName("secondary")
         add_btn.setCursor(Qt.PointingHandCursor)
         add_btn.clicked.connect(lambda: self._add_condition_row())
@@ -182,12 +182,13 @@ class RuleEditDialog(QDialog):
         else:
             self._add_condition_row()
 
-        outer.addWidget(self._section_label("Action"))
+        outer.addWidget(self._section_label(
+            i18n.t("dialog.rule_edit.section.action")))
 
         action_row = QHBoxLayout()
         self.action_type = QComboBox()
         for at in ACTION_TYPES:
-            self.action_type.addItem(_ACTION_LABELS[at], userData=at)
+            self.action_type.addItem(_action_label(at), userData=at)
         if rule and rule.action.type in ACTION_TYPES:
             self.action_type.setCurrentIndex(
                 ACTION_TYPES.index(rule.action.type))
@@ -200,10 +201,11 @@ class RuleEditDialog(QDialog):
         action_row.addWidget(self.action_target_combo, stretch=2)
 
         self.action_target_edit = QLineEdit()
-        self.action_target_edit.setPlaceholderText("Folder path")
+        self.action_target_edit.setPlaceholderText(
+            i18n.t("dialog.rule_edit.placeholder.folder_path"))
         action_row.addWidget(self.action_target_edit, stretch=2)
 
-        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn = QPushButton(i18n.t("action.browse"))
         self.browse_btn.setObjectName("secondary")
         self.browse_btn.setCursor(Qt.PointingHandCursor)
         self.browse_btn.clicked.connect(self._browse_folder)
@@ -212,17 +214,16 @@ class RuleEditDialog(QDialog):
         outer.addLayout(action_row)
 
         # Copy-vs-move replaces the old copy_to_* action variants.
-        self.copy_check = QCheckBox(
-            "Copy instead of move (leave the source file in place)")
+        self.copy_check = QCheckBox(i18n.t("dialog.rule_edit.copy_check"))
         if rule:
             self.copy_check.setChecked(rule.is_copy)
         outer.addWidget(self.copy_check)
 
         rename_row = QHBoxLayout()
-        rename_row.addWidget(QLabel("Rename to:"))
+        rename_row.addWidget(QLabel(i18n.t("dialog.rule_edit.rename_label")))
         self.rename_edit = QLineEdit(rule.action.rename_template if rule else "")
         self.rename_edit.setPlaceholderText(
-            "Optional. Tokens: {stem} {ext} {name} {year} {month} {day}")
+            i18n.t("dialog.rule_edit.placeholder.rename"))
         rename_row.addWidget(self.rename_edit)
         outer.addLayout(rename_row)
 
@@ -265,7 +266,8 @@ class RuleEditDialog(QDialog):
         self.browse_btn.setVisible(wants_folder)
 
     def _browse_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Pick destination")
+        folder = QFileDialog.getExistingDirectory(
+            self, i18n.t("dialog.rule_edit.pick_destination"))
         if folder:
             self.action_target_edit.setText(folder)
 

@@ -10,13 +10,16 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.core.i18n import i18n
 from app.core.models import Category
 
 
 class CategoryEditDialog(QDialog):
     def __init__(self, category: Category | None = None, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Edit category" if category else "New category")
+        self.setWindowTitle(i18n.t(
+            "dialog.category_edit.title_edit" if category
+            else "dialog.category_edit.title_new"))
         self.setMinimumWidth(420)
 
         self._color = category.color if category else "#7c8cff"
@@ -27,8 +30,8 @@ class CategoryEditDialog(QDialog):
         outer.addLayout(form)
 
         self.name_edit = QLineEdit(category.name if category else "")
-        self.name_edit.setPlaceholderText("e.g. Receipts")
-        form.addRow("Name", self.name_edit)
+        self.name_edit.setPlaceholderText(i18n.t("dialog.category_edit.placeholder.name"))
+        form.addRow(i18n.t("common.name"), self.name_edit)
 
         color_row = QWidget()
         color_layout = QVBoxLayout(color_row)
@@ -38,21 +41,19 @@ class CategoryEditDialog(QDialog):
         self.color_button.clicked.connect(self._pick_color)
         self._apply_color_button_style()
         color_layout.addWidget(self.color_button)
-        form.addRow("Color", color_row)
+        form.addRow(i18n.t("common.color"), color_row)
 
         self.ext_edit = QLineEdit(
             ", ".join(category.extensions) if category else "")
-        self.ext_edit.setPlaceholderText(".pdf, .docx, .txt")
-        form.addRow("Extensions", self.ext_edit)
+        self.ext_edit.setPlaceholderText(i18n.t("dialog.category_edit.placeholder.ext"))
+        form.addRow(i18n.t("dialog.category_edit.label.extensions"), self.ext_edit)
 
         self.folder_edit = QLineEdit(
             category.target_folder if category else "")
-        self.folder_edit.setPlaceholderText(
-            "Subfolder name on disk (defaults to the category name)")
-        form.addRow("Target folder", self.folder_edit)
+        self.folder_edit.setPlaceholderText(i18n.t("dialog.category_edit.placeholder.target"))
+        form.addRow(i18n.t("dialog.category_edit.label.target"), self.folder_edit)
 
-        hint = QLabel(
-            "Extensions are matched case-insensitively. Use a leading dot.")
+        hint = QLabel(i18n.t("dialog.category_edit.hint"))
         hint.setStyleSheet("color: #6b7079; font-size: 11px;")
         hint.setWordWrap(True)
         outer.addWidget(hint)
@@ -64,7 +65,8 @@ class CategoryEditDialog(QDialog):
         outer.addWidget(buttons)
 
     def _pick_color(self) -> None:
-        c = QColorDialog.getColor(QColor(self._color), self, "Pick a color")
+        c = QColorDialog.getColor(
+            QColor(self._color), self, i18n.t("dialog.pick_color.title"))
         if c.isValid():
             self._color = c.name()
             self.color_button.setText(self._color)

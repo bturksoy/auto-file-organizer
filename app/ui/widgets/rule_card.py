@@ -33,13 +33,18 @@ def describe_condition(c: Condition) -> str:
 
 def describe_action(action: Action, *, is_copy: bool = False,
                     category_lookup=None) -> str:
-    verb = "Copy" if is_copy else "Move"
+    verb = i18n.t(
+        "widget.rule_card.verb.copy" if is_copy
+        else "widget.rule_card.verb.move"
+    )
     if action.type == "move_to_category":
         name = category_lookup(action.target) if category_lookup else None
-        return f"→ {verb} to {name or action.target}"
+        target = name or action.target
+        return i18n.t("widget.rule_card.action_to", verb=verb, target=target)
     if action.type == "move_to_folder":
-        return f"→ {verb} to {action.target or '...'}"
-    return "→ (no action)"
+        target = action.target or "..."
+        return i18n.t("widget.rule_card.action_to", verb=verb, target=target)
+    return i18n.t("widget.rule_card.no_action")
 
 
 class RuleCard(Card):
@@ -61,13 +66,13 @@ class RuleCard(Card):
         header.setSpacing(8)
 
         # Up/Down arrows live where the drag handle used to be.
-        self._up_btn = self._mk_icon_button("Move up (higher priority)")
+        self._up_btn = self._mk_icon_button(i18n.t("widget.tooltip.move_up"))
         self._up_btn.clicked.connect(
             lambda: self.move_up_requested.emit(self._rule.id))
         self._up_btn.setEnabled(can_move_up)
         header.addWidget(self._up_btn)
 
-        self._down_btn = self._mk_icon_button("Move down (lower priority)")
+        self._down_btn = self._mk_icon_button(i18n.t("widget.tooltip.move_down"))
         self._down_btn.clicked.connect(
             lambda: self.move_down_requested.emit(self._rule.id))
         self._down_btn.setEnabled(can_move_down)
@@ -78,7 +83,7 @@ class RuleCard(Card):
             lambda v: self.toggled.emit(self._rule.id, v))
         header.addWidget(self.toggle)
 
-        name_label = QLabel(rule.name or "(unnamed)")
+        name_label = QLabel(rule.name or i18n.t("common.unnamed"))
         name_label.setStyleSheet("font-size: 14px; font-weight: 600;")
         header.addWidget(name_label)
 
@@ -92,12 +97,12 @@ class RuleCard(Card):
         chip.setObjectName("chipNeutral" if not match_count else "chipAccent")
         header.addWidget(chip)
 
-        self._edit_btn = self._mk_icon_button("Edit rule")
+        self._edit_btn = self._mk_icon_button(i18n.t("widget.tooltip.edit_rule"))
         self._edit_btn.clicked.connect(
             lambda: self.edit_requested.emit(self._rule.id))
         header.addWidget(self._edit_btn)
 
-        self._del_btn = self._mk_icon_button("Delete rule")
+        self._del_btn = self._mk_icon_button(i18n.t("widget.tooltip.delete_rule"))
         self._del_btn.clicked.connect(
             lambda: self.delete_requested.emit(self._rule.id))
         header.addWidget(self._del_btn)

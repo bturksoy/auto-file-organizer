@@ -1,7 +1,6 @@
 """Folders page: recent + destination + watched."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -41,18 +40,19 @@ class FoldersPage(BasePage):
 
     def _build_destination_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("Destination folder"))
+        card.layout().addWidget(self._h2(i18n.t("page.folders.section_destination")))
         body = QHBoxLayout()
         self._dest_edit = QLineEdit()
-        self._dest_edit.setPlaceholderText("Leave empty to organize in place")
+        self._dest_edit.setPlaceholderText(
+            i18n.t("page.folders.placeholder.destination"))
         self._dest_edit.editingFinished.connect(self._save_dest)
         body.addWidget(self._dest_edit, stretch=1)
-        browse = QPushButton("Browse...")
+        browse = QPushButton(i18n.t("action.browse"))
         browse.setObjectName("secondary")
         browse.setCursor(Qt.PointingHandCursor)
         browse.clicked.connect(self._pick_destination)
         body.addWidget(browse)
-        clear = QPushButton("Clear")
+        clear = QPushButton(i18n.t("action.clear"))
         clear.setObjectName("secondary")
         clear.setCursor(Qt.PointingHandCursor)
         clear.clicked.connect(lambda: (self._dest_edit.setText(""),
@@ -65,12 +65,8 @@ class FoldersPage(BasePage):
 
     def _build_watched_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("Watched folders (background mode)"))
-        hint = QLabel(
-            "Each folder listed here is scanned on the auto-organize "
-            "schedule. Add as many as you like — Downloads, Desktop, "
-            "Pictures, anything that fills up."
-        )
+        card.layout().addWidget(self._h2(i18n.t("page.folders.section_watched")))
+        hint = QLabel(i18n.t("page.folders.hint.watched"))
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #9ba0ab;")
         card.layout().addWidget(hint)
@@ -83,12 +79,12 @@ class FoldersPage(BasePage):
         card.layout().addWidget(self._watch_list)
 
         row = QHBoxLayout()
-        add = QPushButton("+ Add folder")
+        add = QPushButton(i18n.t("page.folders.add_btn"))
         add.setObjectName("secondary")
         add.setCursor(Qt.PointingHandCursor)
         add.clicked.connect(self._add_watched)
         row.addWidget(add)
-        remove = QPushButton("Remove selected")
+        remove = QPushButton(i18n.t("page.folders.remove_btn"))
         remove.setObjectName("secondary")
         remove.setCursor(Qt.PointingHandCursor)
         remove.clicked.connect(self._remove_watched)
@@ -101,7 +97,7 @@ class FoldersPage(BasePage):
 
     def _build_recent_card(self) -> Card:
         card = Card()
-        card.layout().addWidget(self._h2("Recent folders"))
+        card.layout().addWidget(self._h2(i18n.t("page.folders.section_recent")))
         self._recent_list = QListWidget()
         self._recent_list.setStyleSheet(
             "QListWidget { background: transparent; border: none; }"
@@ -140,7 +136,8 @@ class FoldersPage(BasePage):
             self._recent_list.addItem(item)
 
     def _pick_destination(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Select destination")
+        folder = QFileDialog.getExistingDirectory(
+            self, i18n.t("dialog.pick_folder.caption"))
         if folder:
             self._dest_edit.setText(folder)
             self._save_dest()
@@ -153,7 +150,8 @@ class FoldersPage(BasePage):
         self._state.save()
 
     def _add_watched(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Add watched folder")
+        folder = QFileDialog.getExistingDirectory(
+            self, i18n.t("dialog.pick_folder.caption"))
         if not folder:
             return
         profile = self._state.active_profile()

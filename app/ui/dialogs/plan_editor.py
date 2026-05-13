@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from app.core.classifier import resolve_destination
 from app.core.content import read_docx_text, read_pdf_text
+from app.core.i18n import i18n
 from app.core.models import Action, Category, Profile
 from app.core.organize import PlannedMove
 from app.core.utils import human_size
@@ -42,22 +43,20 @@ class PlanEditorDialog(QDialog):
             c for c in profile.categories if c.enabled or c.locked
         ]
 
-        self.setWindowTitle("Edit organize plan")
+        self.setWindowTitle(i18n.t("dialog.plan_editor.title"))
         self.setMinimumSize(960, 560)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(8)
 
-        layout.addWidget(QLabel(
-            "Multi-select files (Ctrl+click / Shift+click), choose a "
-            "category from the dropdown, then hit Reassign."
-        ))
+        layout.addWidget(QLabel(i18n.t("dialog.plan_editor.intro")))
 
         # Filter row
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter:"))
+        filter_row.addWidget(QLabel(i18n.t("common.filter_label")))
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("Type to filter by name...")
+        self._filter_edit.setPlaceholderText(
+            i18n.t("dialog.plan_editor.placeholder.filter"))
         self._filter_edit.textChanged.connect(self._apply_filter)
         filter_row.addWidget(self._filter_edit, stretch=1)
         layout.addLayout(filter_row)
@@ -67,7 +66,10 @@ class PlanEditorDialog(QDialog):
         layout.addWidget(split, stretch=1)
 
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["File", "Reason"])
+        self._tree.setHeaderLabels([
+            i18n.t("dialog.plan_editor.col.file"),
+            i18n.t("dialog.plan_editor.col.reason"),
+        ])
         self._tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._tree.setColumnWidth(0, 400)
         self._tree.itemSelectionChanged.connect(self._update_preview)
@@ -82,21 +84,21 @@ class PlanEditorDialog(QDialog):
 
         # Reassign row
         action_row = QHBoxLayout()
-        action_row.addWidget(QLabel("Move selected to:"))
+        action_row.addWidget(QLabel(i18n.t("dialog.plan_editor.move_to")))
         self._cat_combo = QComboBox()
         for cat in self._categories:
             self._cat_combo.addItem(cat.name, userData=cat.id)
         action_row.addWidget(self._cat_combo, stretch=1)
-        reassign = QPushButton("Reassign")
+        reassign = QPushButton(i18n.t("dialog.plan_editor.reassign_btn"))
         reassign.setObjectName("primary")
         reassign.setCursor(Qt.PointingHandCursor)
         reassign.clicked.connect(self._reassign_selected)
         action_row.addWidget(reassign)
 
-        skip = QPushButton("Remove from plan")
+        skip = QPushButton(i18n.t("dialog.plan_editor.remove_btn"))
         skip.setObjectName("secondary")
         skip.setCursor(Qt.PointingHandCursor)
-        skip.setToolTip("Don't move the selected files when Organize runs")
+        skip.setToolTip(i18n.t("dialog.plan_editor.tooltip.remove"))
         skip.clicked.connect(self._remove_selected)
         action_row.addWidget(skip)
 
@@ -171,7 +173,7 @@ class PlanEditorDialog(QDialog):
                 continue
             move.category_id = new_cat_id
             move.dst = new_dst
-            move.reason = "manual reassign"
+            move.reason = i18n.t("dialog.plan_editor.reason.manual")
             move.is_copy = False
         self.plan_changed.emit()
         self._refresh_tree()
@@ -230,18 +232,19 @@ class _PreviewPane(QFrame):
     # ----- view modes ----------------------------------------------------
 
     def show_empty(self) -> None:
-        self._name_label.setText("No file selected")
+        self._name_label.setText(i18n.t("dialog.plan_editor.preview.empty_title"))
         self._meta_label.clear()
         self._image_label.clear()
-        self._image_label.setText("Select a file in the list to preview it.")
+        self._image_label.setText(i18n.t("dialog.plan_editor.preview.empty_hint"))
         self._text_view.clear()
         self._text_view.hide()
         self._image_label.show()
 
     def show_multi(self, count: int) -> None:
-        self._name_label.setText(f"{count} files selected")
+        self._name_label.setText(
+            i18n.t("dialog.plan_editor.preview.multi_title", count=count))
         self._meta_label.setText(
-            "Preview only renders for a single selection.")
+            i18n.t("dialog.plan_editor.preview.multi_hint"))
         self._image_label.clear()
         self._image_label.setText("…")
         self._text_view.clear()
@@ -254,7 +257,7 @@ class _PreviewPane(QFrame):
             st = path.stat()
             self._meta_label.setText(
                 f"{human_size(st.st_size)} • "
-                f"modified {datetime.fromtimestamp(st.st_mtime):%Y-%m-%d %H:%M}"
+                f"{datetime.fromtimestamp(st.st_mtime):%Y-%m-%d %H:%M}"
                 f" • {path.parent}"
             )
         except OSError:
@@ -265,21 +268,28 @@ class _PreviewPane(QFrame):
             self._render_image(path)
             return
         if ext == ".pdf":
-            self._render_text(self._safe_pdf_text(path),
-                              fallback="(PDF text could not be extracted)")
+            self._render_text(
+                self._safe_pdf_text(path),
+                fallback=i18n.t("dialog.plan_editor.preview.pdf_fallback"))
             return
         if ext == ".docx":
-            self._render_text(self._safe_docx_text(path),
-                              fallback="(DOCX text could not be extracted)")
+            self._render_text(
+                self._safe_docx_text(path),
+                fallback=i18n.t("dialog.plan_editor.preview.docx_fallback"))
             return
         if ext in _TEXT_EXTS:
-            self._render_text(self._safe_plain_text(path),
-                              fallback="(file is empty)")
+            self._render_text(
+                self._safe_plain_text(path),
+                fallback=i18n.t("dialog.plan_editor.preview.text_empty"))
             return
         # Unknown binary: show file info only.
         self._image_label.clear()
-        self._image_label.setText(
-            f"No preview available for {ext or 'this file type'}.")
+        if ext:
+            self._image_label.setText(
+                i18n.t("dialog.plan_editor.preview.no_preview_ext", ext=ext))
+        else:
+            self._image_label.setText(
+                i18n.t("dialog.plan_editor.preview.no_preview_generic"))
         self._text_view.clear()
         self._text_view.hide()
         self._image_label.show()
@@ -290,7 +300,8 @@ class _PreviewPane(QFrame):
         pix = QPixmap(str(path))
         if pix.isNull():
             self._image_label.clear()
-            self._image_label.setText("(image could not be loaded)")
+            self._image_label.setText(
+                i18n.t("dialog.plan_editor.preview.image_fail"))
         else:
             target = self._image_label.size()
             scaled = pix.scaled(
@@ -305,9 +316,10 @@ class _PreviewPane(QFrame):
         else:
             lines = text.splitlines()
             if len(lines) > self._MAX_TEXT_LINES:
+                extra = len(lines) - self._MAX_TEXT_LINES
                 lines = lines[: self._MAX_TEXT_LINES] + [
                     "",
-                    f"… ({len(lines) - self._MAX_TEXT_LINES} more lines)"
+                    i18n.t("dialog.plan_editor.preview.more_lines", n=extra),
                 ]
                 text = "\n".join(lines)
         self._text_view.setPlainText(text)

@@ -87,37 +87,32 @@ class HomePage(BasePage):
         self.undo_btn.clicked.connect(self._undo)
         buttons.addWidget(self.undo_btn)
 
-        self.open_explorer_btn = QPushButton("Open in Explorer")
+        self.open_explorer_btn = QPushButton(i18n.t("action.open_in_explorer"))
         self.open_explorer_btn.setObjectName("secondary")
         self.open_explorer_btn.setCursor(Qt.PointingHandCursor)
-        self.open_explorer_btn.setToolTip("Reveal the selected folder in Windows Explorer")
+        self.open_explorer_btn.setToolTip(i18n.t("page.home.tooltip.open_in_explorer"))
         self.open_explorer_btn.clicked.connect(self._open_in_explorer)
         buttons.addWidget(self.open_explorer_btn)
 
-        self.history_btn = QPushButton("History...")
+        self.history_btn = QPushButton(i18n.t("page.home.history_btn"))
         self.history_btn.setObjectName("secondary")
         self.history_btn.setCursor(Qt.PointingHandCursor)
-        self.history_btn.setToolTip(
-            "Browse past organize runs and roll them back")
+        self.history_btn.setToolTip(i18n.t("page.home.tooltip.history"))
         self.history_btn.clicked.connect(self._open_history)
         buttons.addWidget(self.history_btn)
 
-        self.edit_plan_btn = QPushButton("Edit plan...")
+        self.edit_plan_btn = QPushButton(i18n.t("page.home.edit_plan_btn"))
         self.edit_plan_btn.setObjectName("secondary")
         self.edit_plan_btn.setCursor(Qt.PointingHandCursor)
-        self.edit_plan_btn.setToolTip(
-            "Multi-select files in the planned grouping and reassign them "
-            "before Organize runs")
+        self.edit_plan_btn.setToolTip(i18n.t("page.home.tooltip.edit_plan"))
         self.edit_plan_btn.setEnabled(False)
         self.edit_plan_btn.clicked.connect(self._open_plan_editor)
         buttons.addWidget(self.edit_plan_btn)
 
-        self.duplicates_btn = QPushButton("Find duplicates...")
+        self.duplicates_btn = QPushButton(i18n.t("page.home.find_duplicates_btn"))
         self.duplicates_btn.setObjectName("secondary")
         self.duplicates_btn.setCursor(Qt.PointingHandCursor)
-        self.duplicates_btn.setToolTip(
-            "Scan the current folder for byte-identical copies and "
-            "send extras to the Recycle Bin")
+        self.duplicates_btn.setToolTip(i18n.t("page.home.tooltip.find_duplicates"))
         self.duplicates_btn.clicked.connect(self._open_duplicates)
         buttons.addWidget(self.duplicates_btn)
 
@@ -126,10 +121,9 @@ class HomePage(BasePage):
 
         # Search filter for the log content.
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter:"))
+        filter_row.addWidget(QLabel(i18n.t("common.filter_label")))
         self._log_filter = QLineEdit()
-        self._log_filter.setPlaceholderText(
-            "Show only lines containing... (e.g. .pdf)")
+        self._log_filter.setPlaceholderText(i18n.t("page.home.placeholder.log_filter"))
         self._log_filter.textChanged.connect(self._apply_log_filter)
         filter_row.addWidget(self._log_filter, stretch=1)
         layout.addLayout(filter_row)
@@ -163,8 +157,11 @@ class HomePage(BasePage):
 
     def _update_profile_label(self) -> None:
         profile = self._state.active_profile()
-        self._profile_label.setText(
-            f"Profile: {profile.name}" if profile else "No profile")
+        if profile:
+            self._profile_label.setText(
+                i18n.t("page.home.profile_label", name=profile.name))
+        else:
+            self._profile_label.setText(i18n.t("page.home.no_profile"))
 
     def _restyle_meta(self) -> None:
         p = active_palette()
@@ -179,7 +176,7 @@ class HomePage(BasePage):
                 text = "..." + text[-58:]
             self._folder_label.setText(text)
         else:
-            self._folder_label.setText("No folder selected")
+            self._folder_label.setText(i18n.t("page.home.no_folder_selected"))
 
     # ----- preview / organize / undo -----
 
@@ -189,13 +186,13 @@ class HomePage(BasePage):
         folder = self._state.current_folder
         if not folder or not folder.is_dir():
             QMessageBox.information(
-                self, "Pick a folder",
-                "Use the picker at the top right to choose a folder first.")
+                self, i18n.t("dialog.pick_folder.title"),
+                i18n.t("dialog.pick_folder.body"))
             return None
         if not self._state.active_profile():
             QMessageBox.warning(
-                self, "No profile",
-                "Create a profile from the Profiles tab.")
+                self, i18n.t("dialog.no_profile.title"),
+                i18n.t("dialog.no_profile.body"))
             return None
         return folder
 
@@ -267,7 +264,7 @@ class HomePage(BasePage):
         self._set_busy(True)
         self._log_lines.clear()
         self.log.clear()
-        self._append_log(f"=== Preview: {folder} ===")
+        self._append_log(i18n.t("page.home.preview_log_header", path=str(folder)))
         threading.Thread(
             target=self._preview_worker, args=(folder,), daemon=True,
         ).start()
@@ -312,8 +309,8 @@ class HomePage(BasePage):
             return
         if not self._state.last_plan:
             confirmed = QMessageBox.question(
-                self, "No preview yet",
-                "Run Preview first so you can see what will move. Run anyway?",
+                self, i18n.t("dialog.no_preview.title"),
+                i18n.t("dialog.no_preview.body"),
             )
             if confirmed != QMessageBox.Yes:
                 return
@@ -321,7 +318,7 @@ class HomePage(BasePage):
         self._set_busy(True)
         self._log_lines.clear()
         self.log.clear()
-        self._append_log(f"=== Organize: {folder} ===")
+        self._append_log(i18n.t("page.home.organize_log_header", path=str(folder)))
         threading.Thread(
             target=self._organize_worker, args=(folder,), daemon=True,
         ).start()
@@ -351,8 +348,9 @@ class HomePage(BasePage):
                           elapsed_dec: int) -> None:
         secs = elapsed_dec / 10.0
         self._append_log("")
-        self._append_log(
-            f"Done. Moved {moved}, errors {errors}, {secs:.1f}s")
+        self._append_log(i18n.t(
+            "page.home.organize_done_summary",
+            moved=moved, errors=errors, secs=secs))
         self._set_busy(False)
         result = self._state.last_result
         if result and result.moved:
@@ -367,8 +365,8 @@ class HomePage(BasePage):
         folder = self._state.current_folder
         if not folder or not folder.is_dir():
             QMessageBox.information(
-                self, "Pick a folder",
-                "Pick a folder first to scan it for duplicates.")
+                self, i18n.t("dialog.pick_folder.title"),
+                i18n.t("dialog.pick_folder.body_duplicates"))
             return
         profile = self._state.active_profile()
         recursive = bool(profile and profile.settings.recursive_scan)
@@ -378,8 +376,8 @@ class HomePage(BasePage):
         folder = self._state.current_folder
         if not folder or not folder.is_dir():
             QMessageBox.information(
-                self, "Pick a folder",
-                "Pick a folder first to view its undo history.",
+                self, i18n.t("dialog.pick_folder.title"),
+                i18n.t("dialog.pick_folder.body_history"),
             )
             return
         UndoHistoryDialog(folder, parent=self).exec()
@@ -390,11 +388,11 @@ class HomePage(BasePage):
             try:
                 os.startfile(str(folder))
             except OSError as exc:
-                QMessageBox.warning(self, "Open folder", str(exc))
+                QMessageBox.warning(self, i18n.t("dialog.open_folder.title"), str(exc))
         else:
             QMessageBox.information(
-                self, "Pick a folder",
-                "Use the picker at the top right to choose a folder first.",
+                self, i18n.t("dialog.pick_folder.title"),
+                i18n.t("dialog.pick_folder.body"),
             )
 
     def _undo(self) -> None:
@@ -402,13 +400,13 @@ class HomePage(BasePage):
         if not folder:
             return
         confirm = QMessageBox.question(
-            self, "Undo last run",
-            f"Reverse the most recent organize on:\n{folder}",
+            self, i18n.t("dialog.undo_last.title"),
+            i18n.t("dialog.undo_last.body", folder=folder),
         )
         if confirm != QMessageBox.Yes:
             return
         restored, errors = undo_last(folder)
         QMessageBox.information(
-            self, "Undo complete",
-            f"Restored {restored} file(s)\nErrors: {errors}",
+            self, i18n.t("dialog.undo_complete.title"),
+            i18n.t("dialog.undo_complete.body", restored=restored, errors=errors),
         )
