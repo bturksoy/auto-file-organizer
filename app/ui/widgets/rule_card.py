@@ -1,83 +1,77 @@
-"""Card widget for a single Rule, with drag-to-reorder support."""
+"""Card widget for a single Rule. Up/Down arrow buttons reorder priority.
+
+v2.7 replaced the drag handle (70 lines of mouse plumbing) with two arrow
+buttons — discoverable, accessible, and a third of the code.
+"""
 from __future__ import annotations
 
-from PySide6.QtCore import QMimeData, QSize, Qt, Signal
-from PySide6.QtGui import QDrag, QPixmap
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 
 from app.core.i18n import i18n
-from app.core.models import Action, Condition, Rule
+from app.core.models import (
+    Action, Condition, CONDITION_LABELS, LEGACY_CONDITION_LABELS, Rule,
+)
 from app.ui.icons import make_icon
 from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
 from app.ui.widgets.toggle import Toggle
 
 
-_CONDITION_LABELS = {
-    "name_contains": "Name contains",
-    "name_does_not_contain": "Name does NOT contain",
-    "name_starts_with": "Name starts with",
-    "name_ends_with": "Name ends with",
-    "name_regex": "Name matches regex",
-    "extension_is": "Extension is",
-    "extension_in": "Extension in",
-    "path_contains": "Path contains",
-    "size_above_mb": "Size above (MB)",
-    "size_below_mb": "Size below (MB)",
-    "age_above_days": "Older than (days)",
-    "age_below_days": "Newer than (days)",
-}
+def _condition_label(condition_type: str) -> str:
+    """Look up display text for both current and legacy condition types."""
+    return (CONDITION_LABELS.get(condition_type)
+            or LEGACY_CONDITION_LABELS.get(condition_type)
+            or condition_type)
 
 
 def describe_condition(c: Condition) -> str:
-    label = _CONDITION_LABELS.get(c.type, c.type)
-    return f"{label} \"{c.value}\""
+    return f"{_condition_label(c.type)} \"{c.value}\""
 
 
-def describe_action(action: Action, *, category_lookup=None) -> str:
-    verb_map = {
-        "move_to_category": "Move",
-        "copy_to_category": "Copy",
-        "move_to_folder": "Move",
-        "copy_to_folder": "Copy",
-    }
-    verb = verb_map.get(action.type)
-    if action.type in ("move_to_category", "copy_to_category"):
+def describe_action(action: Action, *, is_copy: bool = False,
+                    category_lookup=None) -> str:
+    verb = "Copy" if is_copy else "Move"
+    if action.type == "move_to_category":
         name = category_lookup(action.target) if category_lookup else None
         return f"→ {verb} to {name or action.target}"
-    if action.type in ("move_to_folder", "copy_to_folder"):
+    if action.type == "move_to_folder":
         return f"→ {verb} to {action.target or '...'}"
-    return "→ Skip"
-
-
-MIME_RULE_ID = "application/x-fileorganizer-rule-id"
+    return "→ (no action)"
 
 
 class RuleCard(Card):
     edit_requested = Signal(str)
     delete_requested = Signal(str)
     toggled = Signal(str, bool)
-    drop_received = Signal(str, str)  # (dropped_id, target_id)
+    move_up_requested = Signal(str)
+    move_down_requested = Signal(str)
 
     def __init__(self, rule: Rule, *, category_lookup=None,
-                 match_count: int | None = None, parent=None) -> None:
+                 match_count: int | None = None,
+                 can_move_up: bool = True, can_move_down: bool = True,
+                 parent=None) -> None:
         super().__init__(parent)
         self._rule = rule
         self._category_lookup = category_lookup
 
-        self.setAcceptDrops(True)
-
         header = QHBoxLayout()
-        header.setSpacing(10)
+        header.setSpacing(8)
 
-        self._handle = QLabel()
-        self._handle.setCursor(Qt.OpenHandCursor)
-        self._handle.setToolTip("Drag to reorder priority")
-        self._handle.mousePressEvent = self._start_drag  # type: ignore[assignment]
-        self._handle.setFixedSize(28, 28)
-        header.addWidget(self._handle)
+        # Up/Down arrows live where the drag handle used to be.
+        self._up_btn = self._mk_icon_button("Move up (higher priority)")
+        self._up_btn.clicked.connect(
+            lambda: self.move_up_requested.emit(self._rule.id))
+        self._up_btn.setEnabled(can_move_up)
+        header.addWidget(self._up_btn)
+
+        self._down_btn = self._mk_icon_button("Move down (lower priority)")
+        self._down_btn.clicked.connect(
+            lambda: self.move_down_requested.emit(self._rule.id))
+        self._down_btn.setEnabled(can_move_down)
+        header.addWidget(self._down_btn)
 
         self.toggle = Toggle(checked=rule.enabled)
         self.toggle.toggled.connect(
@@ -98,22 +92,12 @@ class RuleCard(Card):
         chip.setObjectName("chipNeutral" if not match_count else "chipAccent")
         header.addWidget(chip)
 
-        self._edit_btn = QPushButton()
-        self._edit_btn.setObjectName("iconBtn")
-        self._edit_btn.setFixedSize(30, 30)
-        self._edit_btn.setIconSize(QSize(16, 16))
-        self._edit_btn.setCursor(Qt.PointingHandCursor)
-        self._edit_btn.setToolTip("Edit rule")
+        self._edit_btn = self._mk_icon_button("Edit rule")
         self._edit_btn.clicked.connect(
             lambda: self.edit_requested.emit(self._rule.id))
         header.addWidget(self._edit_btn)
 
-        self._del_btn = QPushButton()
-        self._del_btn.setObjectName("iconBtn")
-        self._del_btn.setFixedSize(30, 30)
-        self._del_btn.setIconSize(QSize(16, 16))
-        self._del_btn.setCursor(Qt.PointingHandCursor)
-        self._del_btn.setToolTip("Delete rule")
+        self._del_btn = self._mk_icon_button("Delete rule")
         self._del_btn.clicked.connect(
             lambda: self.delete_requested.emit(self._rule.id))
         header.addWidget(self._del_btn)
@@ -127,11 +111,23 @@ class RuleCard(Card):
             self._cond_labels.append(cond_label)
             self.layout().addWidget(cond_label)
 
-        self._action_label = QLabel(
-            describe_action(rule.action, category_lookup=category_lookup))
+        self._action_label = QLabel(describe_action(
+            rule.action, is_copy=rule.is_copy,
+            category_lookup=category_lookup,
+        ))
         self.layout().addWidget(self._action_label)
         self._restyle_text()
         palette_signal().connect(self._restyle_text)
+
+    @staticmethod
+    def _mk_icon_button(tooltip: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setObjectName("iconBtn")
+        btn.setFixedSize(30, 30)
+        btn.setIconSize(QSize(16, 16))
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        return btn
 
     def _restyle_text(self) -> None:
         p = active_palette()
@@ -142,44 +138,11 @@ class RuleCard(Card):
                 f"color: {p.accent}; font-size: 13px; font-weight: 500;"
             )
         # Repaint icons in the new tint.
-        if hasattr(self, "_handle"):
-            self._handle.setPixmap(
-                make_icon("grip", size=18, color=p.text_faint)
-                .pixmap(18, 18))
+        if hasattr(self, "_up_btn"):
+            self._up_btn.setIcon(make_icon("chevron_up", color=p.text_dim))
+        if hasattr(self, "_down_btn"):
+            self._down_btn.setIcon(make_icon("chevron_down", color=p.text_dim))
         if hasattr(self, "_edit_btn"):
             self._edit_btn.setIcon(make_icon("pencil", color=p.text_dim))
         if hasattr(self, "_del_btn"):
             self._del_btn.setIcon(make_icon("cross", color=p.text_dim))
-
-    # ----- drag-and-drop -----
-
-    def _start_drag(self, event) -> None:
-        if event.button() != Qt.LeftButton:
-            return
-        drag = QDrag(self)
-        mime = QMimeData()
-        mime.setData(MIME_RULE_ID, self._rule.id.encode())
-        drag.setMimeData(mime)
-        pixmap = QPixmap(self.size())
-        pixmap.fill(Qt.transparent)
-        self.render(pixmap)
-        drag.setPixmap(pixmap)
-        drag.exec(Qt.MoveAction)
-
-    def dragEnterEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasFormat(MIME_RULE_ID):
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasFormat(MIME_RULE_ID):
-            event.acceptProposedAction()
-
-    def dropEvent(self, event) -> None:  # noqa: N802
-        data = event.mimeData().data(MIME_RULE_ID)
-        if not data:
-            return
-        dropped_id = bytes(data).decode()
-        if dropped_id == self._rule.id:
-            return
-        self.drop_received.emit(dropped_id, self._rule.id)
-        event.acceptProposedAction()

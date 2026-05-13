@@ -162,10 +162,6 @@ class FoldersPage(BasePage):
         if folder in profile.settings.watched_folders:
             return
         profile.settings.watched_folders.append(folder)
-        # Keep legacy single-folder field in sync with the first entry so
-        # older builds reading the same appdata.json still see something.
-        if not profile.settings.watched_folder:
-            profile.settings.watched_folder = folder
         self._state.save()
         self._refresh_paths()
 
@@ -176,14 +172,10 @@ class FoldersPage(BasePage):
         selected = self._watch_list.selectedItems()
         if not selected:
             return
-        keep = []
         removed = {item.text() for item in selected}
-        for folder in profile.settings.watched_folders:
-            if folder not in removed:
-                keep.append(folder)
-        profile.settings.watched_folders = keep
-        if profile.settings.watched_folder in removed:
-            profile.settings.watched_folder = keep[0] if keep else ""
+        profile.settings.watched_folders = [
+            f for f in profile.settings.watched_folders if f not in removed
+        ]
         self._state.save()
         self._refresh_paths()
 

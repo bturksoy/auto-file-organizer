@@ -100,22 +100,23 @@ Profiles can be exported to JSON and shared.
 
 ### Background mode
 
-In **Settings → Background mode**, enable scheduled auto-organize, pick
-an interval, and the app keeps a tray icon. The tray menu has
-**Show window / Organize now / Pause / Quit**, and a Windows
-notification fires after each pass that actually moved files.
+In **Settings → Background mode**, pick one of three options:
 
-For folders like Downloads where the lag of a scheduled scan is
-noticeable, turn on **Real-time watch** instead — the app listens for
-file-system events and organizes new arrivals within ~2 seconds of the
-download finishing.
+| Mode | What it does |
+|---|---|
+| **Off** | The app only acts when you click Organize manually. |
+| **Scheduled** | Re-organize watched folders every N minutes. |
+| **Real-time** | Organize each new file the moment it lands (~2 s settle). Ideal for Downloads. |
+
+The tray menu has **Show window / Organize now / Pause / Quit**, and a
+Windows notification fires after each pass that actually moved files.
 
 ### Power features
 
-- **AND/OR rule logic** — group conditions with `AND` or `OR` from the
+- **AND / OR rule logic** — group conditions with AND or OR from the
   rule editor instead of every condition having to match.
-- **Date conditions** — match files modified before or after a specific
-  date (e.g. archive every PDF from 2023).
+- **Copy instead of move** — every rule has a "Copy" checkbox so you
+  can mirror a category to a backup folder without removing the source.
 - **Rename templates** — every action can rewrite the destination
   filename using `{stem}`, `{ext}`, `{year}`, `{month}`, `{day}` tokens.
   Example: `{year}-{month}_{stem}{ext}` → `2026-05_invoice.pdf`.

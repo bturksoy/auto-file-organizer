@@ -9,7 +9,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-APP_VERSION = "2.6.0"
+from app.core.utils import human_size  # noqa: F401  re-exported below
+
+APP_VERSION = "2.7.0"
 UPDATE_API_URL = (
     "https://api.github.com/repos/bturksoy/auto-file-organizer/releases/latest"
 )
@@ -45,15 +47,6 @@ def _version_tuple(v: str) -> tuple:
 
 def is_newer(remote: str, local: str) -> bool:
     return _version_tuple(remote) > _version_tuple(local)
-
-
-def human_size(n: int) -> str:
-    size = float(n)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size < 1024:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
-        size /= 1024
-    return f"{size:.1f} PB"
 
 
 def fetch_latest_release() -> dict | None:

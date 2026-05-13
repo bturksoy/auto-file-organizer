@@ -4,32 +4,34 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import sys
 from pathlib import Path
 
 from app.core.normalize import aggressive_strip, maybe_despace, normalize
+from app.core.utils import resources_dir
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
-def _resources_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources"
-    return Path(__file__).resolve().parents[2] / "resources"
+_CV_KEYWORDS_CACHE: tuple[tuple[str, ...], tuple[str, ...]] | None = None
 
 
-@functools.lru_cache(maxsize=1)
 def _cv_keywords() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Lazy-load the CV detection word lists once per process."""
+    global _CV_KEYWORDS_CACHE
+    if _CV_KEYWORDS_CACHE is not None:
+        return _CV_KEYWORDS_CACHE
     try:
         raw = json.loads(
-            (_resources_dir() / "data" / "cv_keywords.json")
+            (resources_dir() / "data" / "cv_keywords.json")
             .read_text(encoding="utf-8")
         )
     except (OSError, json.JSONDecodeError):
-        return (), ()
+        _CV_KEYWORDS_CACHE = ((), ())
+        return _CV_KEYWORDS_CACHE
     strong = tuple(normalize(k) for k in raw.get("strong", []))
     weak = tuple(normalize(k) for k in raw.get("weak", []))
-    return strong, weak
+    _CV_KEYWORDS_CACHE = (strong, weak)
+    return _CV_KEYWORDS_CACHE
 
 
 def read_pdf_text(path: Path, max_pages: int = 4) -> str:

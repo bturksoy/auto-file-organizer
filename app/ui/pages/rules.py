@@ -105,15 +105,21 @@ class RulesPage(BasePage):
                     return c.name
             return ""
 
-        for rule in profile.rules:
+        last_idx = len(profile.rules) - 1
+        for idx, rule in enumerate(profile.rules):
             card = RuleCard(
                 rule, category_lookup=lookup,
                 match_count=self._counts.get(rule.id, 0),
+                can_move_up=idx > 0,
+                can_move_down=idx < last_idx,
             )
             card.toggled.connect(self._on_toggled)
             card.edit_requested.connect(self._edit_existing)
             card.delete_requested.connect(self._delete_existing)
-            card.drop_received.connect(self._on_reorder)
+            card.move_up_requested.connect(
+                lambda rid: self._reorder(rid, -1))
+            card.move_down_requested.connect(
+                lambda rid: self._reorder(rid, +1))
             self._list_layout.addWidget(card)
         self._list_layout.addStretch(1)
 
@@ -177,19 +183,19 @@ class RulesPage(BasePage):
             self._state.save()
             self._refresh()
 
-    def _on_reorder(self, dropped_id: str, target_id: str) -> None:
+    def _reorder(self, rule_id: str, delta: int) -> None:
+        """Swap the rule with its neighbour in the direction of `delta`."""
         profile = self._state.active_profile()
         if not profile:
             return
         ids = [r.id for r in profile.rules]
-        if dropped_id not in ids or target_id not in ids:
+        if rule_id not in ids:
             return
-        src_idx = ids.index(dropped_id)
-        dst_idx = ids.index(target_id)
-        dropped = profile.rules.pop(src_idx)
-        # Insert before the drop target (intuitive)
-        if dst_idx > src_idx:
-            dst_idx -= 1
-        profile.rules.insert(dst_idx, dropped)
+        idx = ids.index(rule_id)
+        new_idx = idx + delta
+        if not 0 <= new_idx < len(profile.rules):
+            return
+        profile.rules[idx], profile.rules[new_idx] = (
+            profile.rules[new_idx], profile.rules[idx])
         self._state.save()
         self._refresh()

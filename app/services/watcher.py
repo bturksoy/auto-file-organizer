@@ -1,18 +1,16 @@
 """Real-time folder watcher backed by watchdog.
 
-When the active profile has `realtime_watch` enabled, an Observer is
+When the active profile's `background_mode` is "realtime", an Observer is
 attached to every watched folder. New / moved files trigger a debounced
 organize pass on that folder (debounced because file downloads usually
 fire multiple events as the file grows).
 
-This sits alongside the timed Scheduler — they don't conflict. Users
-typically pick one or the other; turning both on just means very fresh
-files get organized twice (no-op the second time).
+Mutually exclusive with the timed Scheduler — only one engine runs at a
+time, decided by the radio button on the Settings page.
 """
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
@@ -73,7 +71,6 @@ class Watcher(QObject):
         super().__init__()
         self._state = state
         self._observer = None
-        self._handlers: dict[str, _DebouncedHandler] = {}
 
     @property
     def is_supported(self) -> bool:
@@ -95,14 +92,14 @@ class Watcher(QObject):
         ]
         if not folders:
             return
+        recursive = bool(profile.settings.recursive_scan)
         self._observer = Observer()
         for folder in folders:
             path = Path(folder)
             if not path.is_dir():
                 continue
             handler = _DebouncedHandler(lambda p=path: self._fire(p))
-            self._handlers[str(path)] = handler
-            self._observer.schedule(handler, str(path), recursive=False)
+            self._observer.schedule(handler, str(path), recursive=recursive)
         self._observer.start()
 
     def stop(self) -> None:
@@ -114,7 +111,6 @@ class Watcher(QObject):
         except Exception:
             pass
         self._observer = None
-        self._handlers.clear()
 
     def restart(self) -> None:
         self.stop()

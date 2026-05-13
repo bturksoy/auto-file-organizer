@@ -56,28 +56,36 @@ class CategoriesPage(BasePage):
         profile = self._state.active_profile()
         if not profile:
             return
-        for cat in profile.categories:
-            card = CategoryCard(cat)
+        last_idx = len(profile.categories) - 1
+        for idx, cat in enumerate(profile.categories):
+            card = CategoryCard(
+                cat,
+                can_move_up=idx > 0,
+                can_move_down=idx < last_idx,
+            )
             card.toggled.connect(self._on_toggled)
             card.edit_requested.connect(self._edit_existing)
             card.delete_requested.connect(self._delete_existing)
-            card.drop_received.connect(self._on_reorder)
+            card.move_up_requested.connect(
+                lambda cid: self._reorder(cid, -1))
+            card.move_down_requested.connect(
+                lambda cid: self._reorder(cid, +1))
             self._list_layout.addWidget(card)
         self._list_layout.addStretch(1)
 
-    def _on_reorder(self, dropped_id: str, target_id: str) -> None:
+    def _reorder(self, category_id: str, delta: int) -> None:
         profile = self._state.active_profile()
         if not profile:
             return
         ids = [c.id for c in profile.categories]
-        if dropped_id not in ids or target_id not in ids:
+        if category_id not in ids:
             return
-        src_idx = ids.index(dropped_id)
-        dst_idx = ids.index(target_id)
-        moved = profile.categories.pop(src_idx)
-        if dst_idx > src_idx:
-            dst_idx -= 1
-        profile.categories.insert(dst_idx, moved)
+        idx = ids.index(category_id)
+        new_idx = idx + delta
+        if not 0 <= new_idx < len(profile.categories):
+            return
+        profile.categories[idx], profile.categories[new_idx] = (
+            profile.categories[new_idx], profile.categories[idx])
         self._state.save()
         self._refresh()
 

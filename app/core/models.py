@@ -12,32 +12,51 @@ from typing import Any
 
 
 # --- Condition types accepted by the rules engine ---------------------------
-CONDITION_TYPES = (
-    "name_contains",
-    "name_does_not_contain",
-    "name_starts_with",
-    "name_ends_with",
-    "name_regex",
-    "extension_is",
-    "extension_in",           # comma-separated list
-    "path_contains",          # source directory path substring
-    "size_above_mb",
-    "size_below_mb",
-    "age_above_days",         # file mtime older than N days
-    "age_below_days",         # file mtime newer than N days
-    "modified_after",         # value = YYYY-MM-DD
-    "modified_before",        # value = YYYY-MM-DD
-    "content_matches",        # value = ContentPattern id (see profile.content_patterns)
+# v2.7 trimmed the new-rule menu to these 11 types. The classifier still
+# evaluates the older types (name_does_not_contain, extension_is,
+# modified_after, modified_before) for rules saved by v2.6, but the rule
+# editor no longer offers them — fewer choices, easier picker.
+CONDITION_DEFINITIONS: tuple[tuple[str, str], ...] = (
+    ("name_contains",     "Name contains"),
+    ("name_starts_with",  "Name starts with"),
+    ("name_ends_with",    "Name ends with"),
+    ("name_regex",        "Name matches regex"),
+    ("extension_in",      "Extension is one of"),
+    ("path_contains",     "Path contains"),
+    ("size_above_mb",     "Size above (MB)"),
+    ("size_below_mb",     "Size below (MB)"),
+    ("age_above_days",    "Older than (days)"),
+    ("age_below_days",    "Newer than (days)"),
+    ("content_matches",   "Content matches pattern"),
 )
+CONDITION_TYPES = tuple(t for t, _ in CONDITION_DEFINITIONS)
+CONDITION_LABELS = dict(CONDITION_DEFINITIONS)
+
+# Legacy types kept alive for backwards compatibility but absent from the
+# new-rule dropdown. Labels here cover existing rules displayed in cards.
+LEGACY_CONDITION_LABELS = {
+    "name_does_not_contain": "Name does NOT contain",
+    "extension_is":          "Extension is",
+    "modified_after":        "Modified after",
+    "modified_before":       "Modified before",
+}
 
 # --- Action types -----------------------------------------------------------
+# Whether to move or copy is set on the Rule itself (`is_copy`), so we only
+# need two action verbs. The "skip" action that used to live here is gone —
+# the `rules_only` organization mode does the same thing more honestly.
 ACTION_TYPES = (
     "move_to_category",       # target = category id
     "move_to_folder",         # target = absolute folder path
-    "copy_to_category",       # duplicate to category instead of moving
-    "copy_to_folder",         # duplicate to specific folder
-    "skip",                   # leave file untouched
 )
+
+
+# Map legacy persisted action types onto the new (type, is_copy) pair.
+_LEGACY_ACTION_MIGRATION = {
+    "copy_to_category": ("move_to_category", True),
+    "copy_to_folder":   ("move_to_folder", True),
+    "skip":             ("move_to_category", False),  # neutralised; rule disabled
+}
 
 
 @dataclass
@@ -107,7 +126,11 @@ class Rule:
     # to evaluate via the flat list.
     conditions: list[Condition] = field(default_factory=list)
     condition_root: ConditionGroup | None = None
-    action: Action = field(default_factory=lambda: Action(type="skip"))
+    action: Action = field(
+        default_factory=lambda: Action(type="move_to_category"))
+    # When True, the matched file is duplicated to the destination instead
+    # of moved. Replaces the old copy_to_* action variants.
+    is_copy: bool = False
 
     @staticmethod
     def from_dict(d: dict) -> "Rule":
@@ -115,13 +138,24 @@ class Rule:
         root = None
         if isinstance(d.get("condition_root"), dict):
             root = ConditionGroup.from_dict(d["condition_root"])
+        action = Action.from_dict(d.get("action", {}))
+        is_copy = bool(d.get("is_copy", False))
+        enabled = bool(d.get("enabled", True))
+        # Migrate legacy action types (copy_to_*, skip) to the new pair.
+        if action.type in _LEGACY_ACTION_MIGRATION:
+            new_type, new_copy = _LEGACY_ACTION_MIGRATION[action.type]
+            if action.type == "skip":
+                enabled = False
+            action.type = new_type
+            is_copy = is_copy or new_copy
         return Rule(
             id=str(d.get("id") or uuid.uuid4().hex),
             name=str(d.get("name", "")),
-            enabled=bool(d.get("enabled", True)),
+            enabled=enabled,
             conditions=flat,
             condition_root=root,
-            action=Action.from_dict(d.get("action", {})),
+            action=action,
+            is_copy=is_copy,
         )
 
 
@@ -183,25 +217,23 @@ class ProfileSettings:
     organization_mode: str = "rules_then_categories"
     show_notifications: bool = True
     destination_folder: str = ""
-    # `watched_folder` (singular) is kept for backwards compatibility with
-    # v2.1-v2.3 settings files; `watched_folders` (plural) is the source
-    # of truth going forward and is what the scheduler iterates.
-    watched_folder: str = ""
+    # List of folders the scheduler / watcher iterate over.
     watched_folders: list[str] = field(default_factory=list)
-    auto_organize: bool = False
+    # `background_mode` replaces the auto_organize + realtime_watch bool
+    # pair from v2.6. Mutually exclusive: at most one engine runs at a
+    # time. Accepts "off", "scheduled", "realtime".
+    background_mode: str = "off"
     auto_interval_min: int = 30
     start_in_tray: bool = False
     recursive_scan: bool = False
     inspect_pdf_docx: bool = True
-    # Real-time watcher: organizes on file-system events instead of (or in
-    # addition to) the timed scheduler. Requires the `watchdog` package.
-    realtime_watch: bool = False
 
     @staticmethod
     def from_dict(d: dict) -> "ProfileSettings":
         mode = str(d.get("organization_mode") or "rules_then_categories")
         if mode not in ORG_MODES:
             mode = "rules_then_categories"
+        # Migrate from the v2.1-v2.3 singular `watched_folder` field.
         legacy = str(d.get("watched_folder", "") or "").strip()
         folders = [
             str(p).strip() for p in (d.get("watched_folders") or [])
@@ -209,18 +241,26 @@ class ProfileSettings:
         ]
         if legacy and legacy not in folders:
             folders.insert(0, legacy)
+        # Migrate v2.6 auto_organize / realtime_watch bool pair to the
+        # background_mode enum. Real-time wins if both were enabled.
+        bg = str(d.get("background_mode") or "").lower()
+        if bg not in ("off", "scheduled", "realtime"):
+            if bool(d.get("realtime_watch", False)):
+                bg = "realtime"
+            elif bool(d.get("auto_organize", False)):
+                bg = "scheduled"
+            else:
+                bg = "off"
         return ProfileSettings(
             organization_mode=mode,
             show_notifications=bool(d.get("show_notifications", True)),
             destination_folder=str(d.get("destination_folder", "")),
-            watched_folder=legacy,
             watched_folders=folders,
-            auto_organize=bool(d.get("auto_organize", False)),
+            background_mode=bg,
             auto_interval_min=max(1, int(d.get("auto_interval_min", 30) or 30)),
             start_in_tray=bool(d.get("start_in_tray", False)),
             recursive_scan=bool(d.get("recursive_scan", False)),
             inspect_pdf_docx=bool(d.get("inspect_pdf_docx", True)),
-            realtime_watch=bool(d.get("realtime_watch", False)),
         )
 
 

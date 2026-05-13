@@ -1,71 +1,44 @@
-"""Modal dialog to create or edit a Rule (conditions + action)."""
+"""Modal dialog to create or edit a Rule (conditions + action).
+
+v2.7 removed the in-dialog Test feature — the Rules page shows live match
+counts per rule already (faster + accurate). v2.7 also dropped 4 obscure
+condition types and the skip / copy_to_* action variants. Copy-vs-move
+is now a checkbox on the rule itself.
+"""
 from __future__ import annotations
 
 import uuid
-
-import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from app.core.classifier import _file_meta, _rule_matches
 from app.core.models import (
-    ACTION_TYPES, CONDITION_TYPES, Action, Category, Condition,
-    ConditionGroup, Profile, Rule,
+    ACTION_TYPES, CONDITION_LABELS, CONDITION_TYPES, Action, Category,
+    Condition, ConditionGroup, Profile, Rule,
 )
-
-
-class _TestBridge(QObject):
-    """Bridge for marshalling test-rule counts back to the GUI thread."""
-    counted = Signal(int)
 
 
 _CONDITION_HELP = {
     "name_contains": "substring",
-    "name_does_not_contain": "substring to exclude",
     "name_starts_with": "prefix",
     "name_ends_with": "suffix",
     "name_regex": "regex pattern",
-    "extension_is": ".pdf",
     "extension_in": ".jpg, .png, .webp",
     "path_contains": "subfolder name in source path",
     "size_above_mb": "10",
     "size_below_mb": "10",
     "age_above_days": "30  (older than)",
     "age_below_days": "30  (newer than)",
-    "modified_after": "2024-01-01",
-    "modified_before": "2024-12-31",
-    "content_matches": "Pick a pattern from Content tab",
-}
-
-_CONDITION_LABELS = {
-    "name_contains": "Name contains",
-    "name_does_not_contain": "Name does NOT contain",
-    "name_starts_with": "Name starts with",
-    "name_ends_with": "Name ends with",
-    "name_regex": "Name matches regex",
-    "extension_is": "Extension is",
-    "extension_in": "Extension in list",
-    "path_contains": "Source path contains",
-    "size_above_mb": "Size above (MB)",
-    "size_below_mb": "Size below (MB)",
-    "age_above_days": "Age above (days)",
-    "age_below_days": "Age below (days)",
-    "modified_after": "Modified after (YYYY-MM-DD)",
-    "modified_before": "Modified before (YYYY-MM-DD)",
-    "content_matches": "Content matches pattern",
+    "content_matches": "Pick a pattern (manage from Settings)",
 }
 
 _ACTION_LABELS = {
-    "move_to_category": "Move to category",
-    "move_to_folder": "Move to folder",
-    "copy_to_category": "Copy to category",
-    "copy_to_folder": "Copy to folder",
-    "skip": "Skip (leave in place)",
+    "move_to_category": "Send to category",
+    "move_to_folder":   "Send to folder",
 }
 
 
@@ -80,13 +53,21 @@ class _ConditionRow(QWidget):
 
         self.type_combo = QComboBox()
         for ct in CONDITION_TYPES:
-            self.type_combo.addItem(
-                _CONDITION_LABELS.get(ct, ct.replace("_", " ").title()),
-                userData=ct,
-            )
-        if condition and condition.type in CONDITION_TYPES:
-            self.type_combo.setCurrentIndex(
-                CONDITION_TYPES.index(condition.type))
+            self.type_combo.addItem(CONDITION_LABELS[ct], userData=ct)
+        # Legacy condition types from v2.6 profiles still load — show them
+        # in the dropdown for the existing row so users can edit but not
+        # create new ones.
+        if condition and condition.type not in CONDITION_TYPES:
+            from app.core.models import LEGACY_CONDITION_LABELS
+            label = LEGACY_CONDITION_LABELS.get(
+                condition.type, condition.type)
+            self.type_combo.addItem(f"[legacy] {label}",
+                                    userData=condition.type)
+
+        if condition:
+            idx = self.type_combo.findData(condition.type)
+            if idx >= 0:
+                self.type_combo.setCurrentIndex(idx)
         self.type_combo.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.type_combo, stretch=1)
 
@@ -131,10 +112,16 @@ class _ConditionRow(QWidget):
 
 
 class RuleEditDialog(QDialog):
+    """Edit a rule's name, conditions, and action.
+
+    The dialog returns a `Rule` from `result_rule()` *only after* the user
+    clicks Save. Cancel leaves the original untouched.
+    """
+
     def __init__(self, *, rule: Rule | None = None,
                  categories: list[Category],
                  profile: Profile | None = None,
-                 test_folder: Path | None = None,
+                 test_folder: Path | None = None,  # kept for API compat
                  parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Edit rule" if rule else "New rule")
@@ -143,9 +130,6 @@ class RuleEditDialog(QDialog):
         self._original = rule
         self._categories = categories
         self._profile = profile
-        self._test_folder = test_folder
-        self._test_bridge = _TestBridge()
-        self._test_bridge.counted.connect(self._on_test_counted)
 
         outer = QVBoxLayout(self)
         form = QFormLayout()
@@ -179,9 +163,7 @@ class RuleEditDialog(QDialog):
         add_btn.clicked.connect(lambda: self._add_condition_row())
         outer.addWidget(add_btn, alignment=Qt.AlignLeft)
 
-        # Seed with the rule's existing conditions (prefer the tree if set),
-        # or with one empty row when creating a new rule. Nested groups
-        # collapse to their leaves — the UI is flat for now.
+        # Seed with the rule's existing conditions (flatten the tree if set).
         seed: list[Condition] = []
         if rule:
             if rule.condition_root:
@@ -205,10 +187,7 @@ class RuleEditDialog(QDialog):
         action_row = QHBoxLayout()
         self.action_type = QComboBox()
         for at in ACTION_TYPES:
-            self.action_type.addItem(
-                _ACTION_LABELS.get(at, at.replace("_", " ").title()),
-                userData=at,
-            )
+            self.action_type.addItem(_ACTION_LABELS[at], userData=at)
         if rule and rule.action.type in ACTION_TYPES:
             self.action_type.setCurrentIndex(
                 ACTION_TYPES.index(rule.action.type))
@@ -232,6 +211,13 @@ class RuleEditDialog(QDialog):
 
         outer.addLayout(action_row)
 
+        # Copy-vs-move replaces the old copy_to_* action variants.
+        self.copy_check = QCheckBox(
+            "Copy instead of move (leave the source file in place)")
+        if rule:
+            self.copy_check.setChecked(rule.is_copy)
+        outer.addWidget(self.copy_check)
+
         rename_row = QHBoxLayout()
         rename_row.addWidget(QLabel("Rename to:"))
         self.rename_edit = QLineEdit(rule.action.rename_template if rule else "")
@@ -240,31 +226,14 @@ class RuleEditDialog(QDialog):
         rename_row.addWidget(self.rename_edit)
         outer.addLayout(rename_row)
 
-        if rule and rule.action.type in ("move_to_category", "copy_to_category"):
+        if rule and rule.action.type == "move_to_category":
             for i, cat in enumerate(categories):
                 if cat.id == rule.action.target:
                     self.action_target_combo.setCurrentIndex(i)
                     break
-        elif rule and rule.action.type in ("move_to_folder", "copy_to_folder"):
+        elif rule and rule.action.type == "move_to_folder":
             self.action_target_edit.setText(rule.action.target)
         self._action_changed()
-
-        # Live test row — runs the in-progress rule against the current
-        # folder and shows the match count.
-        test_row = QHBoxLayout()
-        self._test_btn = QPushButton("Test against current folder")
-        self._test_btn.setObjectName("secondary")
-        self._test_btn.setCursor(Qt.PointingHandCursor)
-        self._test_btn.clicked.connect(self._run_test)
-        if not self._test_folder:
-            self._test_btn.setEnabled(False)
-            self._test_btn.setToolTip(
-                "Pick a folder in the main window first to enable testing.")
-        test_row.addWidget(self._test_btn)
-        self._test_result = QLabel("")
-        self._test_result.setStyleSheet("color: #9ba0ab; padding-left: 10px;")
-        test_row.addWidget(self._test_result, stretch=1)
-        outer.addLayout(test_row)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -289,8 +258,8 @@ class RuleEditDialog(QDialog):
 
     def _action_changed(self) -> None:
         at = self.action_type.currentData()
-        wants_cat = at in ("move_to_category", "copy_to_category")
-        wants_folder = at in ("move_to_folder", "copy_to_folder")
+        wants_cat = at == "move_to_category"
+        wants_folder = at == "move_to_folder"
         self.action_target_combo.setVisible(wants_cat)
         self.action_target_edit.setVisible(wants_folder)
         self.browse_btn.setVisible(wants_folder)
@@ -300,42 +269,6 @@ class RuleEditDialog(QDialog):
         if folder:
             self.action_target_edit.setText(folder)
 
-    def _run_test(self) -> None:
-        if not self._test_folder or not self._test_folder.is_dir():
-            return
-        rule = self.result_rule()
-        # Don't mutate the original until the dialog is saved.
-        if self._original is not None:
-            import copy as _copy
-            rule = _copy.copy(rule)
-        self._test_result.setText("Scanning...")
-        self._test_btn.setEnabled(False)
-        folder = self._test_folder
-
-        def work() -> None:
-            count = 0
-            try:
-                for entry in folder.iterdir():
-                    if not entry.is_file():
-                        continue
-                    if entry.name.startswith("."):
-                        continue
-                    if _rule_matches(rule, _file_meta(entry)):
-                        count += 1
-            except OSError:
-                pass
-            self._test_bridge.counted.emit(count)
-        threading.Thread(target=work, daemon=True).start()
-
-    def _on_test_counted(self, count: int) -> None:
-        if count == 0:
-            self._test_result.setText("No matches in the current folder.")
-        elif count == 1:
-            self._test_result.setText("1 file would match.")
-        else:
-            self._test_result.setText(f"{count} files would match.")
-        self._test_btn.setEnabled(True)
-
     def _on_accept(self) -> None:
         if not self.name_edit.text().strip():
             self.name_edit.setFocus()
@@ -343,6 +276,7 @@ class RuleEditDialog(QDialog):
         self.accept()
 
     def result_rule(self) -> Rule:
+        """Build the final Rule. Only call after the dialog is accepted."""
         conditions: list[Condition] = []
         for i in range(self._conditions_layout.count()):
             row = self._conditions_layout.itemAt(i).widget()
@@ -352,9 +286,9 @@ class RuleEditDialog(QDialog):
                     conditions.append(c)
 
         at = self.action_type.currentData()
-        if at in ("move_to_category", "copy_to_category"):
+        if at == "move_to_category":
             target = self.action_target_combo.currentData() or ""
-        elif at in ("move_to_folder", "copy_to_folder"):
+        elif at == "move_to_folder":
             target = self.action_target_edit.text().strip()
         else:
             target = ""
@@ -365,19 +299,23 @@ class RuleEditDialog(QDialog):
 
         operator = self.operator_combo.currentData() or "and"
         root = ConditionGroup(operator=operator, items=list(conditions))
+        is_copy = self.copy_check.isChecked()
+        name = self.name_edit.text().strip()
 
         if self._original:
-            self._original.name = self.name_edit.text().strip()
+            self._original.name = name
             self._original.conditions = conditions  # keep flat in sync
             self._original.condition_root = root
             self._original.action = action
+            self._original.is_copy = is_copy
             return self._original
 
         return Rule(
             id=uuid.uuid4().hex,
-            name=self.name_edit.text().strip(),
+            name=name,
             enabled=True,
             conditions=conditions,
             condition_root=root,
             action=action,
+            is_copy=is_copy,
         )

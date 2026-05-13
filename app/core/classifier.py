@@ -218,8 +218,12 @@ def _category_by_id(profile: Profile, category_id: str) -> Category | None:
 
 def classify(profile: Profile, path: Path,
              inspect_content: bool = True
-             ) -> tuple[Action, str]:
-    """Return (Action, reason). Caller resolves the destination."""
+             ) -> tuple[Action | None, str, bool]:
+    """Return (Action, reason, is_copy).
+
+    Action is None when the file should be left alone (skipped).
+    is_copy comes from the matched rule (False for category fallthrough).
+    """
     mode = profile.settings.organization_mode
     m = _file_meta(path)
 
@@ -227,14 +231,18 @@ def classify(profile: Profile, path: Path,
     if mode != "categories_only":
         for rule in profile.rules:
             if _rule_matches(rule, m, profile):
-                return rule.action, f"rule: {rule.name}"
+                return rule.action, f"rule: {rule.name}", rule.is_copy
         if mode == "rules_only":
-            return Action(type="skip"), "no rule matched"
+            return None, "no rule matched", False
 
     # 2. Extension-based categories
     cat = _category_for_extension(profile, m.ext)
     if cat:
-        return Action(type="move_to_category", target=cat.id), f"ext {m.ext}"
+        return (
+            Action(type="move_to_category", target=cat.id),
+            f"ext {m.ext}",
+            False,
+        )
 
     # 3. Content inspection for PDF/DOCX (per-profile toggle).
     if (inspect_content
@@ -255,6 +263,7 @@ def classify(profile: Profile, path: Path,
                     return (
                         Action(type="move_to_category", target=cv_cat.id),
                         f"content {label}",
+                        False,
                     )
             except OSError:
                 pass
@@ -262,8 +271,12 @@ def classify(profile: Profile, path: Path,
     # 4. Fall back to the "other" category if present, otherwise skip.
     other = _category_by_id(profile, "other")
     if other:
-        return Action(type="move_to_category", target=other.id), "fallback"
-    return Action(type="skip"), "no match"
+        return (
+            Action(type="move_to_category", target=other.id),
+            "fallback",
+            False,
+        )
+    return None, "no match", False
 
 
 def _renamed_filename(action: Action, src: Path, m: FileMeta) -> str:
@@ -287,7 +300,7 @@ def _renamed_filename(action: Action, src: Path, m: FileMeta) -> str:
 
 
 def resolve_destination(profile: Profile, src: Path,
-                        action: Action) -> Path | None:
+                        action: Action | None) -> Path | None:
     """Translate an Action into an absolute destination path.
 
     Supports {year}/{month}/{day}/{ext}/{category} placeholders in the
@@ -295,18 +308,18 @@ def resolve_destination(profile: Profile, src: Path,
     action's rename_template (tokens: {stem} {ext} {name} {year} {month}
     {day}).
     """
-    if action.type == "skip":
+    if action is None:
         return None
     m = _file_meta(src)
     filename = _renamed_filename(action, src, m)
 
-    if action.type in ("move_to_folder", "copy_to_folder"):
+    if action.type == "move_to_folder":
         folder = action.target.strip()
         if not folder:
             return None
         return Path(expand_placeholders(folder, src, m)) / filename
 
-    if action.type in ("move_to_category", "copy_to_category"):
+    if action.type == "move_to_category":
         cat = _category_by_id(profile, action.target)
         if not cat:
             return None
@@ -318,10 +331,6 @@ def resolve_destination(profile: Profile, src: Path,
         return src.parent / leaf / filename
 
     return None
-
-
-def is_copy_action(action: Action) -> bool:
-    return action.type in ("copy_to_category", "copy_to_folder")
 
 
 def category_folder_names(profile: Profile) -> set[str]:

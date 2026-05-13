@@ -2,22 +2,17 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+from app.core.utils import resources_dir
+
 DEFAULT_LANG = "en"
-
-
-def _resources_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources"
-    return Path(__file__).resolve().parents[2] / "resources"
 
 
 def _load_bundles() -> tuple[dict[str, str], dict[str, dict]]:
     languages: dict[str, str] = {}
     strings: dict[str, dict] = {}
-    i18n_dir = _resources_dir() / "i18n"
+    i18n_dir = resources_dir() / "i18n"
     if not i18n_dir.is_dir():
         return languages, strings
     for path in sorted(i18n_dir.glob("*.json")):

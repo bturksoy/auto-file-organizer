@@ -211,26 +211,41 @@ class SettingsPage(BasePage):
     def _build_auto_card(self) -> Card:
         card = Card()
         card.layout().addWidget(self._h2("BACKGROUND MODE"))
-        row1 = QHBoxLayout()
-        title = QLabel("Enable scheduled auto-organize")
-        title.setStyleSheet("font-size: 14px; font-weight: 600;")
-        row1.addWidget(title)
-        row1.addStretch(1)
-        self._auto_toggle = Toggle()
-        self._auto_toggle.toggled.connect(self._on_auto_toggled)
-        row1.addWidget(self._auto_toggle)
-        card.layout().addLayout(row1)
-
         hint = QLabel(
-            "The app keeps a tray icon and re-organizes the watched folder "
-            "(set on the Folders tab) on the chosen interval."
+            "Pick how the app should organize new files in your watched "
+            "folders while the window is closed. Scheduled re-checks every "
+            "few minutes; real-time fires within seconds of a new file."
         )
         hint.setStyleSheet("color: #9ba0ab;")
         hint.setWordWrap(True)
         card.layout().addWidget(hint)
 
+        self._bg_group = QButtonGroup(card)
+        self._bg_buttons: dict[str, QRadioButton] = {}
+        for key, label, desc in (
+            ("off",       "Off",
+             "The app only acts when you click Organize manually."),
+            ("scheduled", "Scheduled",
+             "Re-organize watched folders on a fixed interval."),
+            ("realtime",  "Real-time",
+             "Organize each new file as it arrives (uses watchdog)."),
+        ):
+            btn = QRadioButton(label)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.toggled.connect(
+                lambda checked, k=key: checked and self._set_bg_mode(k))
+            self._bg_group.addButton(btn)
+            self._bg_buttons[key] = btn
+            wrap = QVBoxLayout()
+            wrap.addWidget(btn)
+            sub = QLabel(desc)
+            sub.setStyleSheet("color: #9ba0ab; padding-left: 24px;")
+            sub.setWordWrap(True)
+            wrap.addWidget(sub)
+            card.layout().addLayout(wrap)
+
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Interval (minutes):"))
+        row2.addWidget(QLabel("Scheduled interval (minutes):"))
         self._interval_spin = QSpinBox()
         self._interval_spin.setRange(1, 1440)
         self._interval_spin.valueChanged.connect(self._on_interval_changed)
@@ -242,27 +257,6 @@ class SettingsPage(BasePage):
         row2.addWidget(QLabel("Start in tray:"))
         row2.addWidget(self._tray_start_toggle)
         card.layout().addLayout(row2)
-
-        # Real-time watch row (event-driven; fires within seconds of a new
-        # file appearing instead of waiting for the next scheduled tick).
-        row3 = QHBoxLayout()
-        rt_title = QLabel("Real-time watch (instant organize on new files)")
-        rt_title.setStyleSheet("font-size: 14px; font-weight: 600;")
-        row3.addWidget(rt_title)
-        row3.addStretch(1)
-        self._realtime_toggle = Toggle()
-        self._realtime_toggle.toggled.connect(self._on_realtime_toggled)
-        row3.addWidget(self._realtime_toggle)
-        card.layout().addLayout(row3)
-
-        rt_hint = QLabel(
-            "Listens for file-system events on the watched folders and "
-            "organizes new arrivals after a 2-second settle delay. Useful "
-            "for the Downloads folder. Requires the 'watchdog' package."
-        )
-        rt_hint.setStyleSheet("color: #9ba0ab;")
-        rt_hint.setWordWrap(True)
-        card.layout().addWidget(rt_hint)
         return card
 
     def _build_language_card(self) -> Card:
@@ -334,12 +328,12 @@ class SettingsPage(BasePage):
         if s.organization_mode in self._mode_buttons:
             self._mode_buttons[s.organization_mode].setChecked(True)
         self._notif_toggle.setChecked(s.show_notifications)
-        self._auto_toggle.setChecked(s.auto_organize)
+        bg = s.background_mode if s.background_mode in self._bg_buttons else "off"
+        self._bg_buttons[bg].setChecked(True)
         self._interval_spin.setValue(s.auto_interval_min)
         self._tray_start_toggle.setChecked(s.start_in_tray)
         self._recursive_toggle.setChecked(s.recursive_scan)
         self._pdf_toggle.setChecked(s.inspect_pdf_docx)
-        self._realtime_toggle.setChecked(s.realtime_watch)
         n = len(profile.content_patterns)
         self._patterns_count_label.setText(
             f"{n} pattern{'s' if n != 1 else ''} defined."
@@ -372,11 +366,11 @@ class SettingsPage(BasePage):
         profile.settings.show_notifications = value
         self._state.save()
 
-    def _on_auto_toggled(self, value: bool) -> None:
+    def _set_bg_mode(self, mode: str) -> None:
         profile = self._state.active_profile()
         if not profile:
             return
-        profile.settings.auto_organize = value
+        profile.settings.background_mode = mode
         self._state.save()
 
     def _on_interval_changed(self, value: int) -> None:
@@ -391,13 +385,6 @@ class SettingsPage(BasePage):
         if not profile:
             return
         profile.settings.start_in_tray = value
-        self._state.save()
-
-    def _on_realtime_toggled(self, value: bool) -> None:
-        profile = self._state.active_profile()
-        if not profile:
-            return
-        profile.settings.realtime_watch = value
         self._state.save()
 
     def _on_language_changed(self, _index: int) -> None:

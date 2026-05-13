@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import uuid
 from pathlib import Path
 
 from app.core.models import (
     AppData, Category, Profile, ProfileSettings,
 )
+from app.core.utils import resources_dir
 
 
 def _config_dir() -> Path:
@@ -26,12 +26,6 @@ def _config_dir() -> Path:
 
 def appdata_path() -> Path:
     return _config_dir() / "appdata.json"
-
-
-def _bundled_resources_dir() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources"
-    return Path(__file__).resolve().parents[2] / "resources"
 
 
 _DEFAULT_COLORS = {
@@ -71,7 +65,7 @@ _DEFAULT_COLORS = {
 
 def _build_default_profile() -> Profile:
     """Compose the out-of-the-box profile from the bundled resource JSON."""
-    res = _bundled_resources_dir()
+    res = resources_dir()
     try:
         en = json.loads((res / "i18n" / "en.json").read_text(encoding="utf-8"))
         ext_data = json.loads(

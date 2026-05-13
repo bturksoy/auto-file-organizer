@@ -7,16 +7,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.organize import OrganizeResult
-
-
-def _format_bytes(n: int) -> str:
-    if n < 1024:
-        return f"{n} B"
-    for unit in ("KB", "MB", "GB", "TB"):
-        n /= 1024.0
-        if n < 1024:
-            return f"{n:.1f} {unit}"
-    return f"{n:.1f} PB"
+from app.core.utils import human_size
 
 
 def _format_secs(s: float) -> str:
@@ -44,7 +35,7 @@ class StatsDialog(QDialog):
         outer.addWidget(moved)
 
         summary = QLabel(
-            f"Total size: {_format_bytes(result.bytes_total)}    ·    "
+            f"Total size: {human_size(result.bytes_total)}    ·    "
             f"Elapsed: {_format_secs(result.elapsed_seconds)}    ·    "
             f"Errors: {result.errors}"
         )

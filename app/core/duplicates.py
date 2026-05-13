@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
 
+from app.core.utils import human_size as _human_size
+
 
 _CHUNK = 1024 * 1024  # 1 MiB
 _SKIP_NAMES = {"Thumbs.db", "desktop.ini", ".DS_Store"}
@@ -123,9 +125,5 @@ def find_duplicates(folder: Path, recursive: bool = False,
     return out
 
 
-def human_size(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
-            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
-        n /= 1024
-    return f"{n:.1f} TB"
+# Re-exported for callers that already import duplicates.human_size.
+human_size = _human_size

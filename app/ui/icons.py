@@ -227,6 +227,24 @@ def _plus(p: QPainter, size: QSize, color: QColor) -> None:
                int(w * 0.50), int(h * 0.70))
 
 
+def _chevron_up(p: QPainter, size: QSize, color: QColor) -> None:
+    w, h = size.width(), size.height()
+    p.setPen(_pen(color, 2.0))
+    p.drawLine(int(w * 0.30), int(h * 0.60),
+               int(w * 0.50), int(h * 0.40))
+    p.drawLine(int(w * 0.50), int(h * 0.40),
+               int(w * 0.70), int(h * 0.60))
+
+
+def _chevron_down(p: QPainter, size: QSize, color: QColor) -> None:
+    w, h = size.width(), size.height()
+    p.setPen(_pen(color, 2.0))
+    p.drawLine(int(w * 0.30), int(h * 0.40),
+               int(w * 0.50), int(h * 0.60))
+    p.drawLine(int(w * 0.50), int(h * 0.60),
+               int(w * 0.70), int(h * 0.40))
+
+
 _PAINTERS: dict[str, _IconPainter] = {
     "home": _home,
     "folder": _folder,
@@ -243,6 +261,8 @@ _PAINTERS: dict[str, _IconPainter] = {
     "sun": _sun,
     "moon": _moon,
     "plus": _plus,
+    "chevron_up": _chevron_up,
+    "chevron_down": _chevron_down,
 }
 
 

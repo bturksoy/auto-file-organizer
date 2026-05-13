@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.core.classifier import (
-    category_folder_names, classify, is_copy_action, resolve_destination,
+    category_folder_names, classify, resolve_destination,
 )
 from app.core.models import Action, Profile
 
@@ -88,17 +88,19 @@ def scan_folder(root: Path, profile: Profile,
     for i, entry in enumerate(entries, 1):
         if progress_cb:
             progress_cb(i, total, entry.name)
-        action, reason = classify(profile, entry, inspect_content)
-        dst = resolve_destination(profile, entry, action)
-        if action.type == "skip" or dst is None:
+        action, reason, is_copy = classify(profile, entry, inspect_content)
+        if action is None:
             continue
-        if action.type in ("move_to_category", "copy_to_category"):
+        dst = resolve_destination(profile, entry, action)
+        if dst is None:
+            continue
+        if action.type == "move_to_category":
             category_id = action.target
         else:
             category_id = "_folder"
         plan.append(PlannedMove(
             src=entry, dst=dst, category_id=category_id, reason=reason,
-            is_copy=is_copy_action(action),
+            is_copy=is_copy,
         ))
     return plan
 

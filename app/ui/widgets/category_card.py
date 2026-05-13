@@ -1,16 +1,12 @@
-"""Card widget that renders a single Category."""
+"""Card widget that renders a single Category. Reorder via ↑↓ arrows."""
 from __future__ import annotations
 
-from PySide6.QtCore import QMimeData, QSize, Qt, Signal
-from PySide6.QtGui import QDrag, QPixmap
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 
 from app.core.models import Category
-
-
-MIME_CATEGORY_ID = "application/x-fileorganizer-category-id"
 from app.ui.icons import make_icon, make_pixmap
 from app.ui.theme import active_palette, palette_signal
 from app.ui.widgets.card import Card
@@ -24,16 +20,30 @@ class CategoryCard(Card):
     edit_requested = Signal(str)        # category_id
     delete_requested = Signal(str)
     toggled = Signal(str, bool)         # category_id, enabled
-    drop_received = Signal(str, str)    # dropped_id, target_id
+    move_up_requested = Signal(str)
+    move_down_requested = Signal(str)
 
-    def __init__(self, category: Category, parent=None) -> None:
+    def __init__(self, category: Category, *, can_move_up: bool = True,
+                 can_move_down: bool = True, parent=None) -> None:
         super().__init__(parent)
         self._category = category
-        self.setAcceptDrops(True)
 
-        # Header row: toggle + dot + name + lock/edit/delete
+        # Header row: arrows + toggle + dot + name + lock/edit/delete
         header = QHBoxLayout()
-        header.setSpacing(10)
+        header.setSpacing(8)
+
+        if not category.locked:
+            self._up_btn = self._mk_icon_button("Move up (higher priority)")
+            self._up_btn.clicked.connect(
+                lambda: self.move_up_requested.emit(self._category.id))
+            self._up_btn.setEnabled(can_move_up)
+            header.addWidget(self._up_btn)
+
+            self._down_btn = self._mk_icon_button("Move down (lower priority)")
+            self._down_btn.clicked.connect(
+                lambda: self.move_down_requested.emit(self._category.id))
+            self._down_btn.setEnabled(can_move_down)
+            header.addWidget(self._down_btn)
 
         self.toggle = Toggle(checked=category.enabled)
         self.toggle.toggled.connect(
@@ -55,29 +65,12 @@ class CategoryCard(Card):
             self._lock.setToolTip("Built-in category (cannot be deleted)")
             header.addWidget(self._lock)
         else:
-            self._handle = QLabel()
-            self._handle.setCursor(Qt.OpenHandCursor)
-            self._handle.setFixedSize(24, 28)
-            self._handle.setToolTip("Drag to reorder priority")
-            self._handle.mousePressEvent = self._start_drag  # type: ignore[assignment]
-            header.insertWidget(0, self._handle)
-
-            self.edit_btn = QPushButton()
-            self.edit_btn.setObjectName("iconBtn")
-            self.edit_btn.setCursor(Qt.PointingHandCursor)
-            self.edit_btn.setFixedSize(30, 30)
-            self.edit_btn.setIconSize(QSize(16, 16))
-            self.edit_btn.setToolTip("Edit category")
+            self.edit_btn = self._mk_icon_button("Edit category")
             self.edit_btn.clicked.connect(
                 lambda: self.edit_requested.emit(self._category.id))
             header.addWidget(self.edit_btn)
 
-            self.del_btn = QPushButton()
-            self.del_btn.setObjectName("iconBtn")
-            self.del_btn.setCursor(Qt.PointingHandCursor)
-            self.del_btn.setFixedSize(30, 30)
-            self.del_btn.setIconSize(QSize(16, 16))
-            self.del_btn.setToolTip("Delete category")
+            self.del_btn = self._mk_icon_button("Delete category")
             self.del_btn.clicked.connect(
                 lambda: self.delete_requested.emit(self._category.id))
             header.addWidget(self.del_btn)
@@ -109,6 +102,16 @@ class CategoryCard(Card):
         self._restyle_text()
         palette_signal().connect(self._restyle_text)
 
+    @staticmethod
+    def _mk_icon_button(tooltip: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setObjectName("iconBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedSize(30, 30)
+        btn.setIconSize(QSize(16, 16))
+        btn.setToolTip(tooltip)
+        return btn
+
     def _restyle_text(self) -> None:
         p = active_palette()
         self._folder_icon.setStyleSheet(f"color: {p.text_dim};")
@@ -117,46 +120,14 @@ class CategoryCard(Card):
         if hasattr(self, "_lock"):
             self._lock.setPixmap(
                 make_pixmap("lock", size=18, color=p.text_faint))
-        if hasattr(self, "_handle"):
-            self._handle.setPixmap(
-                make_pixmap("grip", size=18, color=p.text_faint))
+        if hasattr(self, "_up_btn"):
+            self._up_btn.setIcon(make_icon("chevron_up", color=p.text_dim))
+        if hasattr(self, "_down_btn"):
+            self._down_btn.setIcon(make_icon("chevron_down", color=p.text_dim))
         if hasattr(self, "edit_btn"):
             self.edit_btn.setIcon(make_icon("pencil", color=p.text_dim))
         if hasattr(self, "del_btn"):
             self.del_btn.setIcon(make_icon("cross", color=p.text_dim))
-
-    # ----- drag-and-drop -----
-
-    def _start_drag(self, event) -> None:
-        if event.button() != Qt.LeftButton:
-            return
-        drag = QDrag(self)
-        mime = QMimeData()
-        mime.setData(MIME_CATEGORY_ID, self._category.id.encode())
-        drag.setMimeData(mime)
-        pixmap = QPixmap(self.size())
-        pixmap.fill(Qt.transparent)
-        self.render(pixmap)
-        drag.setPixmap(pixmap)
-        drag.exec(Qt.MoveAction)
-
-    def dragEnterEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasFormat(MIME_CATEGORY_ID):
-            event.acceptProposedAction()
-
-    def dragMoveEvent(self, event) -> None:  # noqa: N802
-        if event.mimeData().hasFormat(MIME_CATEGORY_ID):
-            event.acceptProposedAction()
-
-    def dropEvent(self, event) -> None:  # noqa: N802
-        data = event.mimeData().data(MIME_CATEGORY_ID)
-        if not data:
-            return
-        dropped_id = bytes(data).decode()
-        if dropped_id == self._category.id:
-            return
-        self.drop_received.emit(dropped_id, self._category.id)
-        event.acceptProposedAction()
 
     def category(self) -> Category:
         return self._category

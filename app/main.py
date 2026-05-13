@@ -5,17 +5,15 @@ scheduler services, and starts the auto-update check on launch.
 """
 from __future__ import annotations
 
-import os
 import sys
 import threading
-
-from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app.core.state import AppState
+from app.core.utils import resources_dir
 from app.services.scheduler import Scheduler
 from app.services.tray import TrayController
 from app.services.watcher import Watcher
@@ -27,18 +25,11 @@ from app.ui.main_window import MainWindow
 from app.ui.theme import THEMES, build_stylesheet
 
 
-def _resources_dir() -> Path:
-    """Same lookup the rest of the app uses for bundled files."""
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources"
-    return Path(__file__).resolve().parent.parent / "resources"
-
-
 def app_icon() -> QIcon:
     """Load the app icon (cat in folder) from bundled resources."""
     candidates = [
-        _resources_dir() / "icon.ico",
-        _resources_dir() / "icon.png",
+        resources_dir() / "icon.ico",
+        resources_dir() / "icon.png",
     ]
     for path in candidates:
         if path.is_file():
@@ -145,11 +136,16 @@ def main() -> int:
         return holder["window"]
 
     def update_tray_visibility():
+        """Reconcile the scheduler/watcher to the active profile's settings.
+
+        background_mode is mutually exclusive: at most one engine runs at
+        a time. The tray icon shows whenever either engine is on.
+        """
         profile = state.active_profile()
-        wants_scheduler = bool(profile and profile.settings.auto_organize)
-        wants_watcher = bool(
-            profile and profile.settings.realtime_watch and watcher.is_supported
-        )
+        bg = profile.settings.background_mode if profile else "off"
+        wants_scheduler = bg == "scheduled"
+        wants_watcher = bg == "realtime" and watcher.is_supported
+
         if wants_scheduler or wants_watcher:
             tray.show()
         else:
@@ -207,7 +203,22 @@ def main() -> int:
     bridge.update_available.connect(
         lambda info: _prompt_update(current_window(), info, state, bridge)
     )
-    bridge.update_done.connect(lambda: os._exit(0))
+
+    def _on_update_swapped() -> None:
+        """Clean shutdown after the .exe was swapped on disk.
+
+        The previous version called os._exit(0) from a daemon thread,
+        which skipped Qt teardown — leaving the .exe handle locked just
+        long enough for the relauncher .bat to race the file `move` and
+        sometimes fail. Stop services first, then exit the event loop;
+        the launcher .bat does the actual relaunch.
+        """
+        scheduler.stop()
+        watcher.stop()
+        tray.hide()
+        app.quit()
+    bridge.update_done.connect(_on_update_swapped)
+
     bridge.update_failed.connect(
         lambda err: QMessageBox.warning(
             current_window(), "Update failed", err)
@@ -220,7 +231,9 @@ def main() -> int:
 
         def close_event(event):
             profile = state.active_profile()
-            if profile and profile.settings.auto_organize:
+            # Minimise to tray instead of quitting when background mode is
+            # active. Otherwise close the window normally.
+            if profile and profile.settings.background_mode != "off":
                 event.ignore()
                 win.hide()
             else:
@@ -248,7 +261,8 @@ def main() -> int:
 
     # Optional: start hidden if user opted in.
     active = state.active_profile()
-    if active and active.settings.auto_organize and active.settings.start_in_tray:
+    if (active and active.settings.background_mode != "off"
+            and active.settings.start_in_tray):
         holder["window"].hide()
     else:
         holder["window"].show()

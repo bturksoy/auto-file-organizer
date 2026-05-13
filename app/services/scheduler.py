@@ -63,7 +63,8 @@ class Scheduler(QObject):
             interval_s = 30 * 60
             if profile:
                 interval_s = max(60, profile.settings.auto_interval_min * 60)
-                if profile.settings.auto_organize and not self._pause.is_set():
+                if (profile.settings.background_mode == "scheduled"
+                        and not self._pause.is_set()):
                     self._run_one_pass()
             slept = 0
             while slept < interval_s and not self._stop.is_set():
@@ -73,15 +74,12 @@ class Scheduler(QObject):
     def _run_one_pass(self) -> None:
         """Run organize against every watched folder of the active profile."""
         profile = self._state.active_profile()
-        if not profile or not profile.settings.auto_organize:
+        if not profile or profile.settings.background_mode != "scheduled":
             return
         targets = [
             f.strip() for f in (profile.settings.watched_folders or [])
             if f and f.strip()
         ]
-        # Legacy single-folder fallback for very old configs.
-        if not targets and profile.settings.watched_folder:
-            targets = [profile.settings.watched_folder.strip()]
         if not targets:
             return
 

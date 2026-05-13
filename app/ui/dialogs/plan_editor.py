@@ -20,6 +20,7 @@ from app.core.classifier import resolve_destination
 from app.core.content import read_docx_text, read_pdf_text
 from app.core.models import Action, Category, Profile
 from app.core.organize import PlannedMove
+from app.core.utils import human_size
 
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".ico"}
@@ -187,14 +188,6 @@ class PlanEditorDialog(QDialog):
         self._apply_filter(self._filter_edit.text())
 
 
-def _format_size(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if n < 1024 or unit == "GB":
-            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
-        n /= 1024
-    return f"{n:.1f} GB"
-
-
 class _PreviewPane(QFrame):
     """Right-hand pane showing a thumbnail or text snippet for one file."""
 
@@ -260,7 +253,7 @@ class _PreviewPane(QFrame):
         try:
             st = path.stat()
             self._meta_label.setText(
-                f"{_format_size(st.st_size)} • "
+                f"{human_size(st.st_size)} • "
                 f"modified {datetime.fromtimestamp(st.st_mtime):%Y-%m-%d %H:%M}"
                 f" • {path.parent}"
             )
