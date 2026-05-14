@@ -313,6 +313,13 @@ class AppData:
         theme = str(d.get("theme") or "dark")
         if theme not in ("dark", "light"):
             theme = "dark"
+        # If the field is missing AND the appdata already has profiles,
+        # treat this as an upgrade from a pre-v2.9 install — the user
+        # has used the app before, so don't pop the wizard.
+        if "first_run_seen" in d:
+            first_run_seen = bool(d.get("first_run_seen"))
+        else:
+            first_run_seen = bool(d.get("profiles"))
         return AppData(
             active_profile_id=str(d.get("active_profile_id", "")),
             profiles=[Profile.from_dict(p) for p in d.get("profiles", [])],
@@ -321,7 +328,7 @@ class AppData:
             check_updates_on_startup=bool(d.get("check_updates_on_startup", True)),
             recent_folders=list(d.get("recent_folders", [])),
             dismissed_update_version=str(d.get("dismissed_update_version", "")),
-            first_run_seen=bool(d.get("first_run_seen", False)),
+            first_run_seen=first_run_seen,
         )
 
     def to_dict(self) -> dict[str, Any]:
